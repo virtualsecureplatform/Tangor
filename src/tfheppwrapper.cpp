@@ -2,6 +2,8 @@
 
 namespace Tangor{
 
+TFHEpp::EvalKey ek;
+
 void HomNOTWrap(void *buffers[], void *cl_arg)
 {
 /* CPU copy of the vector pointer */
@@ -22,12 +24,11 @@ struct starpu_codelet clHomNOT =
 template <class P, int casign, int cbsign, typename P::T offset>
 void HomGateWrap(void *buffers[], void *cl_arg)
 {
-const TFHEpp::EvalKey* const ek = static_cast<TFHEpp::EvalKey*>(cl_arg);
 /* CPU copy of the vector pointer */
 TFHEpp::TLWE<P> res,ina,inb;
 for(int i = 0; i<= P::n; i++) ina[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[1]))[i];
 for(int i = 0; i<= P::n; i++) inb[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[2]))[i];
-TFHEpp::HomGate<P,casign,cbsign,offset>(res,ina,inb,*ek);
+TFHEpp::HomGate<P,casign,cbsign,offset>(res,ina,inb,ek);
 for(int i = 0; i<= P::n; i++) reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[0]))[i] = res[i];
 }
 
@@ -113,13 +114,12 @@ struct starpu_codelet clHomORYN =
 
 void HomMUXWrap(void *buffers[], void *cl_arg)
 {
-const TFHEpp::EvalKey* const ek = static_cast<TFHEpp::EvalKey*>(cl_arg);
 /* CPU copy of the vector pointer */
 TFHEpp::TLWE<P> res,ins,ina,inb;
 for(int i = 0; i<= P::n; i++) ins[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[1]))[i];
 for(int i = 0; i<= P::n; i++) ina[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[2]))[i];
 for(int i = 0; i<= P::n; i++) inb[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[3]))[i];
-TFHEpp::HomMUX<P>(res,ins,ina,inb,*ek);
+TFHEpp::HomMUX<P>(res,ins,ina,inb,ek);
 for(int i = 0; i<= P::n; i++) reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[0]))[i] = res[i];
 }
 
@@ -133,13 +133,12 @@ struct starpu_codelet clHomMUX =
 
 void HomNMUXWrap(void *buffers[], void *cl_arg)
 {
-const TFHEpp::EvalKey* const ek = static_cast<TFHEpp::EvalKey*>(cl_arg);
 /* CPU copy of the vector pointer */
 TFHEpp::TLWE<P> res,ins,ina,inb;
 for(int i = 0; i<= P::n; i++) ins[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[1]))[i];
 for(int i = 0; i<= P::n; i++) ina[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[2]))[i];
 for(int i = 0; i<= P::n; i++) inb[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[3]))[i];
-TFHEpp::HomNMUX<P>(res,ins,ina,inb,*ek);
+TFHEpp::HomNMUX<P>(res,ins,ina,inb,ek);
 for(int i = 0; i<= P::n; i++) reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[0]))[i] = res[i];
 }
 

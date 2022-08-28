@@ -18,4 +18,5 @@ extern struct starpu_codelet clHomORYN;
 extern struct starpu_codelet clHomMUX;
 extern struct starpu_codelet clHomNMUX;
 
+extern TFHEpp::EvalKey ek;
 }

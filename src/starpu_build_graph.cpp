@@ -129,21 +129,21 @@ for (int gate_index = 1; gate_index <= BCnetlist.gate_vector.size();
 				search_pointer(gate.in[1], BCnetlist, "in1");
 		// 2 input gates
 		if (gate.name == "NAND")
-			starpu_task_insert(&clHomNAND, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, STARPU_VALUE, &ek, sizeof(ek), 0);
+			starpu_task_insert(&clHomNAND, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, 0);
 		else if (gate.name == "NOR")
-			starpu_task_insert(&clHomNOR, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, STARPU_VALUE, &ek, sizeof(ek), 0);
+			starpu_task_insert(&clHomNOR, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, 0);
 		else if (gate.name == "XNOR")
-			starpu_task_insert(&clHomXNOR, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, STARPU_VALUE, &ek, sizeof(ek), 0);
+			starpu_task_insert(&clHomXNOR, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, 0);
 		else if (gate.name == "AND")
-			starpu_task_insert(&clHomAND, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, STARPU_VALUE, &ek, sizeof(ek), 0);
+			starpu_task_insert(&clHomAND, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, 0);
 		else if (gate.name == "OR")
-			starpu_task_insert(&clHomOR, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, STARPU_VALUE, &ek, sizeof(ek), 0);
+			starpu_task_insert(&clHomOR, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, 0);
 		else if (gate.name == "XOR")
-			starpu_task_insert(&clHomXOR, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, STARPU_VALUE, &ek, sizeof(ek), 0);
+			starpu_task_insert(&clHomXOR, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, 0);
 		else if (gate.name == "ANDYN")
-			starpu_task_insert(&clHomANDYN, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, STARPU_VALUE, &ek, sizeof(ek), 0);
+			starpu_task_insert(&clHomANDYN, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, 0);
 		else if (gate.name == "ORYN")
-			starpu_task_insert(&clHomORYN, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, STARPU_VALUE, &ek, sizeof(ek), 0);
+			starpu_task_insert(&clHomORYN, STARPU_W, outcipher, STARPU_R, inacipher, STARPU_R, inbcipher, 0);
 		else {
 			std::cout << "GATE PARSE ERROR" << std::endl;
 			std::cout << gate.name << std::endl;
@@ -163,9 +163,9 @@ for (int gate_index = 1; gate_index <= BCnetlist.gate_vector.size();
 			inscipher =
 				search_pointer(gate.in[2], BCnetlist, "in2");
 		if (gate.name == "MUX")
-			starpu_task_insert(&clHomMUX, STARPU_W, outcipher, STARPU_R, inscipher, STARPU_R, inbcipher, STARPU_R, inacipher, STARPU_VALUE, &ek, sizeof(ek), 0);
+			starpu_task_insert(&clHomMUX, STARPU_W, outcipher, STARPU_R, inscipher, STARPU_R, inbcipher, STARPU_R, inacipher, 0);
 		else if(gate.name == "NMUX")
-			starpu_task_insert(&clHomNMUX, STARPU_W, outcipher, STARPU_R, inscipher, STARPU_R, inbcipher, STARPU_R, inacipher, STARPU_VALUE, &ek, sizeof(ek), 0);
+			starpu_task_insert(&clHomNMUX, STARPU_W, outcipher, STARPU_R, inscipher, STARPU_R, inbcipher, STARPU_R, inacipher, 0);
 		// #ifdef USE_M12
 		// else if(gate.name == "AOI3")
 		// 	gatetasknet[gate_index - 1] = taskflow.emplace([=, &ek]() {

@@ -9,10 +9,8 @@ int main (){
 
 
     // To see performance
-    std::chrono::system_clock::time_point start, end;
+    std::chrono::system_clock::time_point start, init, end;
     start = std::chrono::system_clock::now();
-
-	TFHEpp::EvalKey ek;
 
     // reads the cloud key from file
     {
@@ -44,6 +42,7 @@ int main (){
 	starpu_init(NULL);
 
 	starpu_build_graph(BCnetlist,ek);
+    init = std::chrono::system_clock::now();
 
 	starpu_task_wait_for_all();
 
@@ -58,8 +57,20 @@ int main (){
 
     end = std::chrono::system_clock::now();
     double time = static_cast<double>(
+        std::chrono::duration_cast<std::chrono::microseconds>(init - start)
+            .count() /
+        1000.0);
+    printf("init time %lf[ms]\n", time);
+
+    time = static_cast<double>(
+        std::chrono::duration_cast<std::chrono::microseconds>(end - init)
+            .count() /
+        1000.0);
+    printf("run time %lf[ms]\n", time);
+
+    time = static_cast<double>(
         std::chrono::duration_cast<std::chrono::microseconds>(end - start)
             .count() /
         1000.0);
-    printf("cloud time %lf[ms]\n", time);
+    printf("total time %lf[ms]\n", time);
 }
