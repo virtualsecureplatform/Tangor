@@ -1,0 +1,6 @@
+[submodule "thirdparties/cuFHE"]
+	path = thirdparties/cuFHE
+	url = https://github.com/virtualsecureplatform/cuFHE.git
+[submodule "thirdparties/json"]
+	path = thirdparties/json
+	url = https://github.com/nlohmann/json.git
