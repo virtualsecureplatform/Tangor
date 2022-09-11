@@ -1,13 +1,23 @@
-file(GLOB tangor_sources "*.cpp")
+set(tangor_sources tangor.cpp yosys-json-parser.cpp starpu_build_graph.cpp wrappedcodelets.cpp tfheppwrapper.cpp)
+
+if(USE_HOGE)
+set(tangor_sources ${tangor_sources} hogewrapper.cpp)
+endif()
 
 add_executable(tangor
   ${tangor_sources}
   )
 
 target_link_libraries(tangor PRIVATE tfhe++)
+if(USE_HOGE)
+target_link_libraries(tangor PRIVATE xcl2)
+endif()
+
+
 target_include_directories(tangor
   PUBLIC ${PROJECT_SOURCE_DIR}/include
   ${PROJECT_SOURCE_DIR}/thirdparties/json/single_include
+  ${PROJECT_SOURCE_DIR}/thirdparties/xcl2
   )
 
 #For StarPU

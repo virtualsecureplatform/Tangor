@@ -1,4 +1,4 @@
-#include <tfheppwrapper.hpp>
+#include <wrappedcodelets.hpp>
 #include <starpu_build_graph.hpp>
 #include <fstream>
 #include <iostream>
@@ -40,6 +40,10 @@ int main (){
 
     // Init StarPU
 	starpu_init(NULL);
+
+#ifdef USE_HOGE
+    HOGE_init(argv[1],ek);
+#endif
 
 	starpu_build_graph(BCnetlist,ek);
     init = std::chrono::system_clock::now();
