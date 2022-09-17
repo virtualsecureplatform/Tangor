@@ -5,7 +5,7 @@
 
 using namespace Tangor;
 
-int main (){
+int main (int argc, char* argv[]){
 
 
     // To see performance
@@ -42,7 +42,7 @@ int main (){
 	starpu_init(NULL);
 
 #ifdef USE_HOGE
-    HOGE_init(argv[1],ek);
+    HOGEinit(argv[1],ek);
 #endif
 
 	starpu_build_graph(BCnetlist,ek);

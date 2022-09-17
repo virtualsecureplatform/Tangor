@@ -1,8 +1,8 @@
 #pragma once
-#include<tfheppwrapper.hpp>
 #ifdef USE_HOGE
 #include<hogewrapper.hpp>
 #endif
+#include<tfheppwrapper.hpp>
 
 namespace Tangor{
 

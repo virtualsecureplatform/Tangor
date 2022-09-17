@@ -10,12 +10,13 @@ add_executable(tangor
 
 target_link_libraries(tangor PRIVATE tfhe++)
 if(USE_HOGE)
-target_link_libraries(tangor PRIVATE xcl2)
+find_package(OpenCL REQUIRED)
+target_link_libraries(tangor PRIVATE xcl2 rt)
 endif()
 
 
 target_include_directories(tangor
-  PUBLIC ${PROJECT_SOURCE_DIR}/include
+  PRIVATE ${PROJECT_SOURCE_DIR}/include
   ${PROJECT_SOURCE_DIR}/thirdparties/json/single_include
   ${PROJECT_SOURCE_DIR}/thirdparties/xcl2
   )

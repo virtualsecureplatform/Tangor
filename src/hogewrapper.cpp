@@ -21,6 +21,8 @@ std::array<std::shared_ptr<cl::Buffer>, bknumbus> buffer_bkntts;
 std::array<std::shared_ptr<cl::Buffer>, iksknumbus> buffer_iksks;
 
 void HOGEinit(const std::string& binaryFile, const TFHEpp::EvalKey& ek){
+    std::cout << "HOGE!" << std::endl;
+    cl_int err;
 	// The get_xil_devices will return vector of Xilinx Devices
     auto devices = xcl::get_xil_devices();
 
@@ -64,7 +66,7 @@ void HOGEinit(const std::string& binaryFile, const TFHEpp::EvalKey& ek){
 	constexpr uint wordsinbus = (1U<<buswidthlb)/std::numeric_limits<typename TFHEpp::lvl0param::T>::digits;
 
   	alignas(4096) std::array<std::array<std::array<std::array<std::array<std::array<typename TFHEpp::lvl0param::T, wordsinbus>, totaliksknumbus/iksknumbus>, (1 << TFHEpp::lvl10param::basebit) - 1>, TFHEpp::lvl10param::t>,TFHEpp::lvl1param::n>,iksknumbus> ikskaligned = {};
-    for(int i = 0; i<TFHEpp::lvl1param::n; i++) for(int j = 0; j < TFHEpp::lvl10param::t; j++) for(int k = 0; k< (1 << TFHEpp::lvl10param::basebit) - 1; k++) for(int l = 0; l < wordsinbus; l++) for(int m = 0; m < iksknumbus; m++) for(int n = 0; n < totaliksknumbus/iksknumbus; n++) ikskaligned[m][i][j][k][n][l] = (ek.getiksk<TFHEpp::lvl0param>())[i][j][k][n*iksknumbus*wordsinbus+m*wordsinbus+l];
+    for(int i = 0; i<TFHEpp::lvl1param::n; i++) for(int j = 0; j < TFHEpp::lvl10param::t; j++) for(int k = 0; k< (1 << TFHEpp::lvl10param::basebit) - 1; k++) for(int l = 0; l < wordsinbus; l++) for(int m = 0; m < iksknumbus; m++) for(int n = 0; n < totaliksknumbus/iksknumbus; n++) ikskaligned[m][i][j][k][n][l] = (ek.getiksk<TFHEpp::lvl10param>())[i][j][k][n*iksknumbus*wordsinbus+m*wordsinbus+l];
     alignas(4096) std::array<std::array<std::array<std::array<std::array<uint64_t,buswords>,numcycle>,2*TFHEpp::lvl1param::l>,TFHEpp::lvl0param::n>,bknumbus> bknttaligned = {};
     for(int k =0; k < 2; k++) for(int bus = 0; bus < bknumbus/2; bus++) for(int i = 0; i < TFHEpp::lvl0param::n; i++) for(int l = 0; l < 2*TFHEpp::lvl1param::l; l++) for(int cycle = 0; cycle < numcycle; cycle++) for(int word = 0; word<buswords; word++) bknttaligned[k*bknumbus/2+bus][i][l][cycle][word] = (ek.getbkntt<TFHEpp::lvl01param>())[i][l][k][cycle*bknumbus/2*buswords+bus*buswords+word].value;
 
