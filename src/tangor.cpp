@@ -2,6 +2,7 @@
 #include <starpu_build_graph.hpp>
 #include <fstream>
 #include <iostream>
+#include <starpu_heteroprio.h>
 
 using namespace Tangor;
 
@@ -38,8 +39,15 @@ int main (int argc, char* argv[]){
     ifs.close();
     const YosysJSONparser::ParsedBC BCnetlist(json);
 
-    // Init StarPU
-	starpu_init(NULL);
+    // struct starpu_conf conf;
+    // starpu_conf_init(&conf);
+    // conf.sched_policy_name = "heteroprio";
+    // conf.sched_policy_init = &init_heteroprio;
+
+    // // Init StarPU
+    // starpu_init(&conf);
+    
+    starpu_init(NULL);
 
 #ifdef USE_HOGE
     HOGEinit(argv[1],ek);
@@ -50,6 +58,7 @@ int main (int argc, char* argv[]){
 
 	starpu_task_wait_for_all();
 
+    std::cout<< starpu_opencl_worker_get_count() << std::endl;
     starpu_shutdown();
 
         // export the result ciphertexts to a file

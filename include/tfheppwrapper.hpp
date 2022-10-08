@@ -1,6 +1,7 @@
 #pragma once
 #include "tangorparam.hpp"
 #include <starpu.h>
+#include <starpu_heteroprio.h>
 
 namespace Tangor{
 

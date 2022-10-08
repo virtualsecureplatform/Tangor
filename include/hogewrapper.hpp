@@ -31,6 +31,7 @@ extern std::array<std::shared_ptr<cl::Buffer>, iksknumbus> buffer_iksks;
 
 template<uint16_t scaleaindex, uint16_t scalebindex, uint16_t offsetindex>
 void HOGEwrap(void *buffers[], void *cl_arg){
+std::cout<<"HOGE!"<<std::endl;
 cl_int err;
 using P = TFHEpp::lvl1param;
 /* CPU copy of the vector pointer */

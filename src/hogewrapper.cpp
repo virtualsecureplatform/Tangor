@@ -21,7 +21,6 @@ std::array<std::shared_ptr<cl::Buffer>, bknumbus> buffer_bkntts;
 std::array<std::shared_ptr<cl::Buffer>, iksknumbus> buffer_iksks;
 
 void HOGEinit(const std::string& binaryFile, const TFHEpp::EvalKey& ek){
-    std::cout << "HOGE!" << std::endl;
     cl_int err;
 	// The get_xil_devices will return vector of Xilinx Devices
     auto devices = xcl::get_xil_devices();
