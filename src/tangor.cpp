@@ -2,7 +2,7 @@
 #include <starpu_build_graph.hpp>
 #include <fstream>
 #include <iostream>
-#include <starpu_heteroprio.h>
+// #include <starpu_heteroprio.h>
 
 using namespace Tangor;
 
@@ -49,16 +49,18 @@ int main (int argc, char* argv[]){
     
     starpu_init(NULL);
 
+
 #ifdef USE_HOGE
+    std::cout<<"Initializing HOGE"<<std::endl;
     HOGEinit(argv[1],ek);
 #endif
 
 	starpu_build_graph(BCnetlist,ek);
+    std::cout<<"Start"<<std::endl;
     init = std::chrono::system_clock::now();
 
 	starpu_task_wait_for_all();
 
-    std::cout<< starpu_opencl_worker_get_count() << std::endl;
     starpu_shutdown();
 
         // export the result ciphertexts to a file

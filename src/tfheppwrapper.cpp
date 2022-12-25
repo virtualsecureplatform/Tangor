@@ -15,6 +15,7 @@ for(int i = 0; i<= P::n; i++) reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET
 
 struct starpu_codelet clHomNOT =
 {
+    .where = STARPU_CPU,
     .cpu_funcs = { HomNOTWrap },
     .cpu_funcs_name = { "HomNOT" },
     .nbuffers = 2,
@@ -34,6 +35,7 @@ for(int i = 0; i<= P::n; i++) reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET
 
 struct starpu_codelet clHomMUX =
 {
+    .where = STARPU_CPU,
     .cpu_funcs = { HomMUXWrap },
     .cpu_funcs_name = { "HomMUX" },
     .nbuffers = 4,
@@ -53,6 +55,7 @@ for(int i = 0; i<= P::n; i++) reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET
 
 struct starpu_codelet clHomNMUX =
 {
+    .where = STARPU_CPU,
     .cpu_funcs = { HomNMUXWrap },
     .cpu_funcs_name = { "HomNMUX" },
     .nbuffers = 4,

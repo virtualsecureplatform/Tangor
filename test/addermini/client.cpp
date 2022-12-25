@@ -12,6 +12,9 @@ int main()
     std::unique_ptr<TFHEpp::SecretKey> sk(new TFHEpp::SecretKey);
     TFHEpp::EvalKey ek;
     ek.emplacebkfft<TFHEpp::lvl01param>(*sk);
+    #ifdef USE_HOGE
+    ek.emplacebkntt<TFHEpp::lvl01param>(*sk);
+    #endif
     ek.emplaceiksk<TFHEpp::lvl10param>(*sk);
 
     // export the secret key to file for later use

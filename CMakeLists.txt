@@ -7,7 +7,6 @@ OPTION(USE_M12 "Use M_12 encoded message space" OFF)
 
 if(USE_HOGE)
     add_compile_definitions(USE_HOGE)
-    add_compile_definitions(STARPU_USE_OPENCL)
     add_subdirectory(thirdparties/xcl2)
 endif()
 
@@ -23,6 +22,5 @@ endif()
 
 add_subdirectory(thirdparties/cuFHE/thirdparties/TFHEpp)
 add_subdirectory(src)
-
 
 add_subdirectory(test)
