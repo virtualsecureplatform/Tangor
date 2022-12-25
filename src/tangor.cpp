@@ -39,14 +39,6 @@ int main (int argc, char* argv[]){
     ifs.close();
     const YosysJSONparser::ParsedBC BCnetlist(json);
 
-    // struct starpu_conf conf;
-    // starpu_conf_init(&conf);
-    // conf.sched_policy_name = "heteroprio";
-    // conf.sched_policy_init = &init_heteroprio;
-
-    // // Init StarPU
-    // starpu_init(&conf);
-    
     starpu_init(NULL);
 
 
