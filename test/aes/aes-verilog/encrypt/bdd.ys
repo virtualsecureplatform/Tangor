@@ -1,0 +1,32 @@
+# read design 
+read_verilog ./*.v
+
+# elaborate design hierarchy
+hierarchy -check -top aes_1cc
+
+# the high-level stuff
+proc; opt; fsm; opt; memory; opt
+
+# mapping to internal cell library
+techmap; opt
+
+# mapping logic to gates.
+# abc -lut 8:8
+abc -g MUX -script +bdd;collapse;order;muxes
+opt
+# abc -script ./script.abc
+
+# cleanup
+clean -purge
+
+stat -width
+
+# write synthesized design
+# write_aiger  -ascii circuit.aiger
+# write_aiger circuit.aiger
+write_json circuit.json
+# write_blif -iname circuit.blif
+# write_verilog circuit.v
+
+#check output circuit
+# show

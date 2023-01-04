@@ -1,0 +1,3 @@
+[submodule "thirdparties/AES"]
+	path = thirdparties/AES
+	url = https://github.com/SergeyBel/AES.git
