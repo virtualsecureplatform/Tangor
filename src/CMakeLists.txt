@@ -1,4 +1,4 @@
-set(tangor_sources tangor.cpp yosys-json-parser.cpp starpu_build_graph.cpp wrappedcodelets.cpp tfheppwrapper.cpp)
+set(tangor_sources tangor.cpp yosys-json-parser.cpp starpu_build_graph.cpp wrappedcodelets.cpp)
 
 if(USE_HOGE)
 set(tangor_sources ${tangor_sources} hogewrapper.cpp)
