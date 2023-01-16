@@ -61,9 +61,9 @@ void HOGEMUXwrap(void *buffers[], void *cl_arg){
     for(int i = 0; i<= P::n; i++) buftlweb[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[2]))[i]; //c1
 
     // Setting the kernel Arguments
-    OCL_CHECK(err, err = (*kernel).setArg(0, 0)); // scalea
-    OCL_CHECK(err, err = (*kernel).setArg(1, 0)); // scaleb
-    OCL_CHECK(err, err = (*kernel).setArg(2, 2)); // offset
+    OCL_CHECK(err, err = (*kernel).setArg(0, static_cast<uint16_t>(0))); // scalea
+    OCL_CHECK(err, err = (*kernel).setArg(1, static_cast<uint16_t>(0))); // scaleb
+    OCL_CHECK(err, err = (*kernel).setArg(2,  static_cast<uint16_t>(2))); // offset
 
     OCL_CHECK(err, err = q->enqueueMigrateMemObjects({*buffer_ina,*buffer_inb}, 0 /* 0 means from host*/));
     OCL_CHECK(err, err = q->enqueueTask(*kernel));
@@ -71,7 +71,7 @@ void HOGEMUXwrap(void *buffers[], void *cl_arg){
     q->finish();
     for(int i = 0; i<= P::n; i++) reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[0]))[i] = bufres[i];
     for(int i = 0; i<= P::n; i++) buftlweb[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[3]))[i]; //c0
-    OCL_CHECK(err, err = (*kernel).setArg(0, 2)); // scalea
+    OCL_CHECK(err, err = (*kernel).setArg(0,  static_cast<uint16_t>(2))); // scalea
     OCL_CHECK(err, err = q->enqueueMigrateMemObjects({*buffer_inb}, 0 /* 0 means from host*/));
     OCL_CHECK(err, err = q->enqueueTask(*kernel));
     OCL_CHECK(err, err = q->enqueueMigrateMemObjects({*buffer_res}, CL_MIGRATE_MEM_OBJECT_HOST));

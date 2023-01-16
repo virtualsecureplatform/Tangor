@@ -3,16 +3,11 @@ set(CMAKE_CXX_FLAGS "-march=native -O3 -g")
 project(tangor CXX)
 set(CMAKE_CXX_STANDARD 20)
 option(USE_HOGE "Use HOGE for 2-input gates" OFF)
-OPTION(USE_M12 "Use M_12 encoded message space" OFF) 
 
 if(USE_HOGE)
     add_compile_definitions(USE_HOGE)
     add_subdirectory(thirdparties/xcl2)
 endif()
-
-# if(USE_M12)
-# 	add_compile_definitions(USE_M12)
-# endif()
 
 # For OpenMP
 find_package(OpenMP)

@@ -23,7 +23,7 @@ target_include_directories(tangor
 
 #For StarPU
 find_package(PkgConfig)
-pkg_check_modules(STARPU REQUIRED starpu-1.3)
+pkg_check_modules(STARPU REQUIRED starpu-1.4)
 if (STARPU_FOUND)
     target_include_directories (tangor PUBLIC ${STARPU_INCLUDE_DIRS})
     target_link_directories    (tangor PRIVATE ${STARPU_STATIC_LIBRARY_DIRS})

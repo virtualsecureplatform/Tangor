@@ -1,8 +1,9 @@
 #include <wrappedcodelets.hpp>
 #include <starpu_build_graph.hpp>
+#include <starpu_bound.h>
 #include <fstream>
 #include <iostream>
-// #include <starpu_heteroprio.h>
+#include <stdio.h>
 
 using namespace Tangor;
 
@@ -47,22 +48,32 @@ int main (int argc, char* argv[]){
     HOGEinit(argv[1],ek);
 #endif
 
+    starpu_bound_start(1,0);
+
 	starpu_build_graph(BCnetlist,ek);
     std::cout<<"Start"<<std::endl;
     init = std::chrono::system_clock::now();
 
 	starpu_task_wait_for_all();
 
-    starpu_shutdown();
+    end = std::chrono::system_clock::now();
+    starpu_bound_stop();
 
-        // export the result ciphertexts to a file
+    // export the result ciphertexts to a file
     {
         std::ofstream ofs{"./result.data", std::ios::binary};
         cereal::PortableBinaryOutputArchive ar(ofs);
         ar(cipherout);
     }
 
-    end = std::chrono::system_clock::now();
+    {
+        FILE *f = fopen("minimum_runtime.lp", "w");
+        starpu_bound_print_lp(f);
+        fclose(f);
+    }
+
+    starpu_shutdown();
+
     double time = static_cast<double>(
         std::chrono::duration_cast<std::chrono::microseconds>(init - start)
             .count() /
@@ -80,4 +91,16 @@ int main (int argc, char* argv[]){
             .count() /
         1000.0);
     printf("total time %lf[ms]\n", time);
+
+    {
+        #ifdef USE_HOGE
+        std::ofstream ofs("HOGE_runtime.txt",std::ios::app);
+        #else
+        std::ofstream ofs("CPU_runtime.txt",std::ios::app);
+        #endif
+        ofs<<static_cast<double>(
+        std::chrono::duration_cast<std::chrono::microseconds>(end - init)
+            .count() /
+        1000.0)<<std::endl;
+    }
 }

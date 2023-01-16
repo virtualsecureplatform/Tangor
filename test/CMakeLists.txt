@@ -14,3 +14,10 @@ SUBDIRLIST(test_directories ${CMAKE_CURRENT_LIST_DIR})
 foreach(test_directory ${test_directories})
     add_subdirectory(${test_directory})
 endforeach(test_directory ${test_directories})
+
+
+if(USE_HOGE)
+file(COPY HOGEbenchmark.bash DESTINATION .)
+else()
+file(COPY CPUbenchmark.bash DESTINATION .)
+endif()
