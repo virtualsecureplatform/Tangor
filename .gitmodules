@@ -4,3 +4,6 @@
 [submodule "thirdparties/cuFHEpp"]
 	path = thirdparties/cuFHEpp
 	url = https://github.com/virtualsecureplatform/cuFHEpp.git
+[submodule "thirdparties/starpu"]
+	path = thirdparties/starpu
+	url = https://github.com/starpu-runtime/starpu.git

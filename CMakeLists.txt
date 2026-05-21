@@ -4,22 +4,107 @@ project(tangor CXX C)
 set(CMAKE_CXX_STANDARD 20)
 option(USE_HOGE "Use HOGE for 2-input gates" OFF)
 option(USE_CUFHEPP "Use cuFHEpp CUDA gate kernels through StarPU CUDA workers" OFF)
+option(TANGOR_USE_BUNDLED_STARPU "Build and use bundled StarPU instead of pkg-config StarPU" ${USE_CUFHEPP})
 option(TANGOR_BUILD_TESTS "Build Tangor test clients" ON)
 set(TANGOR_CUFHEPP_SOURCE_DIR "${PROJECT_SOURCE_DIR}/thirdparties/cuFHEpp" CACHE PATH "cuFHEpp checkout that provides TFHEpp")
 set(TANGOR_TFHEPP_SOURCE_DIR "" CACHE PATH "Optional TFHEpp checkout override; defaults to cuFHEpp's nested TFHEpp")
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(STARPU REQUIRED starpu-1.4)
 set(TANGOR_STARPU_HAS_CUDA OFF)
-foreach(starpu_include_dir IN LISTS STARPU_INCLUDE_DIRS)
-    if(EXISTS "${starpu_include_dir}/starpu_config.h")
-        file(STRINGS "${starpu_include_dir}/starpu_config.h" starpu_cuda_define
-            REGEX "^[ \t]*#[ \t]*define[ \t]+STARPU_USE_CUDA")
-        if(starpu_cuda_define)
-            set(TANGOR_STARPU_HAS_CUDA ON)
-        endif()
+
+if(TANGOR_USE_BUNDLED_STARPU)
+    if(NOT EXISTS "${PROJECT_SOURCE_DIR}/thirdparties/starpu/autogen.sh")
+        message(FATAL_ERROR
+            "Bundled StarPU is missing. Run "
+            "`git submodule update --init thirdparties/starpu` "
+            "or configure with -DTANGOR_USE_BUNDLED_STARPU=OFF.")
     endif()
-endforeach()
+
+    include(ExternalProject)
+    find_package(CUDAToolkit REQUIRED)
+    find_package(Threads REQUIRED)
+    foreach(tangor_starpu_tool IN ITEMS autoconf automake autoreconf bash libtool libtoolize make)
+        string(TOUPPER "${tangor_starpu_tool}" tangor_starpu_tool_upper)
+        find_program(TANGOR_${tangor_starpu_tool_upper}_EXECUTABLE "${tangor_starpu_tool}")
+        if(NOT TANGOR_${tangor_starpu_tool_upper}_EXECUTABLE)
+            message(FATAL_ERROR
+                "Bundled StarPU requires `${tangor_starpu_tool}` to bootstrap. "
+                "Install StarPU autotools dependencies or configure with "
+                "-DTANGOR_USE_BUNDLED_STARPU=OFF.")
+        endif()
+    endforeach()
+
+    get_filename_component(TANGOR_CUDA_BIN_DIR "${CUDAToolkit_NVCC_EXECUTABLE}" DIRECTORY)
+    get_filename_component(TANGOR_CUDA_ROOT_DIR "${TANGOR_CUDA_BIN_DIR}" DIRECTORY)
+    list(GET CUDAToolkit_INCLUDE_DIRS 0 TANGOR_CUDA_INCLUDE_DIR)
+    set(TANGOR_CUDA_LIBRARY_DIR "${CUDAToolkit_LIBRARY_DIR}")
+
+    set(TANGOR_STARPU_HAS_CUDA ON)
+    set(TANGOR_BUNDLED_STARPU_PREFIX "${CMAKE_BINARY_DIR}/starpu-install")
+    set(TANGOR_BUNDLED_STARPU_WORK_DIR "${CMAKE_BINARY_DIR}/starpu-build")
+    set(TANGOR_BUNDLED_STARPU_LIBRARY "${TANGOR_BUNDLED_STARPU_PREFIX}/lib/libstarpu-1.4.so")
+    set(TANGOR_BUNDLED_STARPU_INCLUDE_DIR "${TANGOR_BUNDLED_STARPU_PREFIX}/include/starpu/1.4")
+    file(MAKE_DIRECTORY "${TANGOR_BUNDLED_STARPU_INCLUDE_DIR}" "${TANGOR_BUNDLED_STARPU_PREFIX}/lib")
+
+    set(TANGOR_BUNDLED_STARPU_ENV
+        "PATH=${TANGOR_CUDA_BIN_DIR}:$ENV{PATH}"
+        "LD_LIBRARY_PATH=${TANGOR_CUDA_LIBRARY_DIR}:$ENV{LD_LIBRARY_PATH}"
+        "NVCC=${CUDAToolkit_NVCC_EXECUTABLE}"
+        "NVCCFLAGS=-arch=sm_80 -Wno-deprecated-gpu-targets")
+
+    ExternalProject_Add(tangor_starpu_external
+        SOURCE_DIR "${PROJECT_SOURCE_DIR}/thirdparties/starpu"
+        BINARY_DIR "${TANGOR_BUNDLED_STARPU_WORK_DIR}/build"
+        INSTALL_DIR "${TANGOR_BUNDLED_STARPU_PREFIX}"
+        CONFIGURE_COMMAND
+            ${CMAKE_COMMAND} -E env ${TANGOR_BUNDLED_STARPU_ENV}
+            ${TANGOR_BASH_EXECUTABLE} -c
+            "rm -rf '${TANGOR_BUNDLED_STARPU_WORK_DIR}/src' && \
+             cp -a '<SOURCE_DIR>' '${TANGOR_BUNDLED_STARPU_WORK_DIR}/src' && \
+             (git -C '<SOURCE_DIR>' log -n 1 --pretty='%H%d' 2>/dev/null || echo unknown) > '${TANGOR_BUNDLED_STARPU_WORK_DIR}/src/STARPU-REVISION' && \
+             rm -rf '${TANGOR_BUNDLED_STARPU_WORK_DIR}/src/.git' && \
+             cd '${TANGOR_BUNDLED_STARPU_WORK_DIR}/src' && ./autogen.sh && \
+             mkdir -p '<BINARY_DIR>' && cd '<BINARY_DIR>' && \
+             '${TANGOR_BUNDLED_STARPU_WORK_DIR}/src/configure' \
+                --prefix='<INSTALL_DIR>' \
+                --libdir='<INSTALL_DIR>/lib' \
+                --enable-cuda \
+                --with-cuda-dir='${TANGOR_CUDA_ROOT_DIR}' \
+                --with-cuda-include-dir='${TANGOR_CUDA_INCLUDE_DIR}' \
+                --with-cuda-lib-dir='${TANGOR_CUDA_LIBRARY_DIR}' \
+                --with-cublas-dir='${TANGOR_CUDA_ROOT_DIR}' \
+                --with-cublas-include-dir='${TANGOR_CUDA_INCLUDE_DIR}' \
+                --with-cublas-lib-dir='${TANGOR_CUDA_LIBRARY_DIR}' \
+                --disable-opencl \
+                --disable-mpi \
+                --disable-fortran \
+                --disable-build-tests \
+                --disable-build-examples \
+                --disable-build-doc \
+                --disable-starpupy \
+                --disable-starpufft"
+        BUILD_COMMAND ${CMAKE_COMMAND} -E env ${TANGOR_BUNDLED_STARPU_ENV} ${TANGOR_MAKE_EXECUTABLE} -j2
+        INSTALL_COMMAND ${CMAKE_COMMAND} -E env ${TANGOR_BUNDLED_STARPU_ENV} ${TANGOR_MAKE_EXECUTABLE} install
+        BUILD_BYPRODUCTS "${TANGOR_BUNDLED_STARPU_LIBRARY}")
+
+    add_library(tangor_starpu::starpu SHARED IMPORTED GLOBAL)
+    set_target_properties(tangor_starpu::starpu PROPERTIES
+        IMPORTED_LOCATION "${TANGOR_BUNDLED_STARPU_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${TANGOR_BUNDLED_STARPU_INCLUDE_DIR}"
+        INTERFACE_LINK_LIBRARIES "Threads::Threads;CUDA::cudart;CUDA::cublas")
+    add_dependencies(tangor_starpu::starpu tangor_starpu_external)
+else()
+    pkg_check_modules(STARPU REQUIRED starpu-1.4)
+    foreach(starpu_include_dir IN LISTS STARPU_INCLUDE_DIRS)
+        if(EXISTS "${starpu_include_dir}/starpu_config.h")
+            file(STRINGS "${starpu_include_dir}/starpu_config.h" starpu_cuda_define
+                REGEX "^[ \t]*#[ \t]*define[ \t]+STARPU_USE_CUDA")
+            if(starpu_cuda_define)
+                set(TANGOR_STARPU_HAS_CUDA ON)
+            endif()
+        endif()
+    endforeach()
+endif()
 
 set(TANGOR_USE_CUFHEPP_STARPU OFF)
 if(USE_CUFHEPP)

@@ -32,7 +32,13 @@ target_include_directories(tangor
   )
 
 #For StarPU
-if (STARPU_FOUND)
+if(TANGOR_USE_BUNDLED_STARPU)
+    add_dependencies(tangor tangor_starpu_external)
+    target_link_libraries(tangor PRIVATE tangor_starpu::starpu)
+    target_link_options(tangor PRIVATE
+        "-Wl,-rpath,${TANGOR_BUNDLED_STARPU_PREFIX}/lib"
+        "-Wl,-rpath,${TANGOR_CUDA_LIBRARY_DIR}")
+elseif (STARPU_FOUND)
     target_include_directories (tangor PUBLIC ${STARPU_INCLUDE_DIRS})
     target_compile_options     (tangor PRIVATE ${STARPU_CFLAGS_OTHER})
     target_link_directories    (tangor PRIVATE ${STARPU_LIBRARY_DIRS})

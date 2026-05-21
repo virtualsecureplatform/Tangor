@@ -1,6 +1,7 @@
 #include <wrappedcodelets.hpp>
 #include <starpu_build_graph.hpp>
 #include <starpu_bound.h>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <stdio.h>
@@ -57,7 +58,10 @@ int main (int argc, char* argv[]){
     HOGEinit(argv[1],ek);
 #endif
 
-    starpu_bound_start(1,0);
+    const bool write_starpu_bound_lp =
+        std::getenv("TANGOR_WRITE_STARPU_BOUND_LP") != nullptr;
+    if (write_starpu_bound_lp)
+        starpu_bound_start(1,0);
 
 	starpu_build_graph(BCnetlist,ek);
     std::cout<<"Start"<<std::endl;
@@ -67,7 +71,8 @@ int main (int argc, char* argv[]){
     starpu_sync_outputs_to_host();
 
     end = std::chrono::system_clock::now();
-    starpu_bound_stop();
+    if (write_starpu_bound_lp)
+        starpu_bound_stop();
 
     // export the result ciphertexts to a file
     {
@@ -76,10 +81,12 @@ int main (int argc, char* argv[]){
         ar(cipherout);
     }
 
-    {
+    if (write_starpu_bound_lp) {
         FILE *f = fopen("minimum_runtime.lp", "w");
-        starpu_bound_print_lp(f);
-        fclose(f);
+        if (f != nullptr) {
+            starpu_bound_print_lp(f);
+            fclose(f);
+        }
     }
 
 #ifdef USE_CUFHEPP
