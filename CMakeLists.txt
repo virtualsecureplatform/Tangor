@@ -8,6 +8,8 @@ option(TANGOR_USE_BUNDLED_STARPU "Build and use bundled StarPU instead of pkg-co
 option(TANGOR_BUILD_TESTS "Build Tangor test clients" ON)
 set(TANGOR_CUFHEPP_SOURCE_DIR "${PROJECT_SOURCE_DIR}/thirdparties/cuFHEpp" CACHE PATH "cuFHEpp checkout that provides TFHEpp")
 set(TANGOR_TFHEPP_SOURCE_DIR "" CACHE PATH "Optional TFHEpp checkout override; defaults to cuFHEpp's nested TFHEpp")
+set(TANGOR_BUNDLED_STARPU_MAX_CPUS "256" CACHE STRING "Bundled StarPU CPU-worker capacity; also sizes STARPU_NMAXWORKERS for many CUDA streams")
+set(TANGOR_BUNDLED_STARPU_MAX_COMBINED_WORKERS "1" CACHE STRING "Bundled StarPU combined-worker capacity; Tangor does not use parallel StarPU tasks")
 
 find_package(PkgConfig REQUIRED)
 set(TANGOR_STARPU_HAS_CUDA OFF)
@@ -75,6 +77,8 @@ if(TANGOR_USE_BUNDLED_STARPU)
                 --with-cublas-dir='${TANGOR_CUDA_ROOT_DIR}' \
                 --with-cublas-include-dir='${TANGOR_CUDA_INCLUDE_DIR}' \
                 --with-cublas-lib-dir='${TANGOR_CUDA_LIBRARY_DIR}' \
+                --enable-maxcpus='${TANGOR_BUNDLED_STARPU_MAX_CPUS}' \
+                --enable-maxcombinedworkers='${TANGOR_BUNDLED_STARPU_MAX_COMBINED_WORKERS}' \
                 --disable-opencl \
                 --disable-mpi \
                 --disable-fortran \
