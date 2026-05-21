@@ -4,12 +4,13 @@
 #endif
 #include "tangorparam.hpp"
 #include <starpu.h>
+#include <type_traits>
 
 namespace Tangor{
 
 extern TFHEpp::EvalKey ek;
 
-template <class P, int casign, int cbsign, typename P::T offset>
+template <class P, int casign, int cbsign, std::make_signed_t<typename P::T> offset>
 void HomGateWrap(void *buffers[], void *cl_arg)
 {
 #ifdef USE_HOGE
@@ -21,12 +22,14 @@ if(starpu_worker_get_id()==0){
 	return;
 }
 #endif
+static_assert(std::is_same_v<P, TFHEpp::lvl1param>,
+              "Tangor CPU gate wrapper currently supports TFHEpp::lvl1param");
 /* CPU copy of the vector pointer */
 TFHEpp::TLWE<P> res,ina,inb;
-for(int i = 0; i<= P::n; i++) ina[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[1]))[i];
-for(int i = 0; i<= P::n; i++) inb[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[2]))[i];
-TFHEpp::HomGate<P,casign,cbsign,offset>(res,ina,inb,ek);
-for(int i = 0; i<= P::n; i++) reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[0]))[i] = res[i];
+for(int i = 0; i<= P::k * P::n; i++) ina[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[1]))[i];
+for(int i = 0; i<= P::k * P::n; i++) inb[i] = reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[2]))[i];
+TFHEpp::HomGate<TFHEpp::lvl10param, TFHEpp::lvl01param, TFHEpp::lvl01param::targetP::μ, casign, cbsign, offset>(res,ina,inb,ek);
+for(int i = 0; i<= P::k * P::n; i++) reinterpret_cast<typename P::T*>(STARPU_VECTOR_GET_PTR(buffers[0]))[i] = res[i];
 }
 
 extern struct starpu_codelet clHomNAND;

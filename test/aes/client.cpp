@@ -47,8 +47,8 @@ int main()
 
     // AES aes(AESKeyLength::AES_128);
 
-    std::vector<TFHEpp::TLWE<TFHEpp::lvl1param>> ciphertext =
-        TFHEpp::bootsSymEncrypt(p, *sk);
+    std::vector<TFHEpp::TLWE<TFHEpp::lvl1param>> ciphertext;
+    TFHEpp::bootsSymEncrypt(ciphertext, p, *sk);
 
     // export the 2+2*bitwith ciphertexts to a file (for the cloud)
     {

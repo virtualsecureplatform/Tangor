@@ -41,8 +41,8 @@ int main()
     uint64_t ina = inrand(engine);
     for (int i = 0; i < bitwidth; i++) p[i] = (ina >> i) & 1;
 
-    std::vector<TFHEpp::TLWE<TFHEpp::lvl1param>> ciphertext =
-        TFHEpp::bootsSymEncrypt(p, *sk);
+    std::vector<TFHEpp::TLWE<TFHEpp::lvl1param>> ciphertext;
+    TFHEpp::bootsSymEncrypt(ciphertext, p, *sk);
 
     // export the 2+2*bitwith ciphertexts to a file (for the cloud)
     {

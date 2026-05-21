@@ -44,8 +44,8 @@ int main()
     std::vector<uint8_t> p(2 + 2 * bitwidth);
     for (int i = 0; i < 16; i++) p[i + 2] = (ina >> i) & 1;
     for (int i = 0; i < 16; i++) p[i + 2 + bitwidth] = (inb >> i) & 1;
-    std::vector<TFHEpp::TLWE<TFHEpp::lvl1param>> ciphertext =
-        TFHEpp::bootsSymEncrypt(p, *sk);
+    std::vector<TFHEpp::TLWE<TFHEpp::lvl1param>> ciphertext;
+    TFHEpp::bootsSymEncrypt(ciphertext, p, *sk);
 
     // export the 2+2*bitwith ciphertexts to a file (for the cloud)
     {

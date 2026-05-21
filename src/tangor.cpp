@@ -40,7 +40,10 @@ int main (int argc, char* argv[]){
     ifs.close();
     const YosysJSONparser::ParsedBC BCnetlist(json);
 
-    starpu_init(NULL);
+    if (starpu_init(NULL) != 0) {
+        std::cerr << "failed to initialize StarPU" << std::endl;
+        return 1;
+    }
 
 
 #ifdef USE_HOGE
