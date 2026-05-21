@@ -19,4 +19,5 @@ extern std::vector<starpu_data_handle_t> cipherdffd_handle;
 extern std::vector<starpu_data_handle_t> cipherwire_handle;
 
 void starpu_build_graph(const YosysJSONparser::ParsedBC& BCnetlist, const TFHEpp::EvalKey& ek);
+void starpu_sync_outputs_to_host();
 }

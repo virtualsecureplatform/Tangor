@@ -226,4 +226,13 @@ for (int gate_index = 1; gate_index <= BCnetlist.gate_vector.size();
 	}
 }
 }
+
+void starpu_sync_outputs_to_host()
+{
+    for (starpu_data_handle_t handle : cipherout_handle) {
+        starpu_data_acquire(handle, STARPU_R);
+        starpu_data_release(handle);
+    }
+}
+
 }

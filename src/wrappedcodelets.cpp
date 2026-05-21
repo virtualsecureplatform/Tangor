@@ -4,6 +4,16 @@ namespace Tangor{
 
 TFHEpp::EvalKey ek;
 
+#ifdef USE_CUFHEPP
+#define TANGOR_CODELET_WHERE (STARPU_CPU | STARPU_CUDA)
+#define TANGOR_CUDA_IMPL(func) \
+    .cuda_funcs = { func }, \
+    .cuda_flags = { STARPU_CUDA_ASYNC },
+#else
+#define TANGOR_CODELET_WHERE STARPU_CPU
+#define TANGOR_CUDA_IMPL(func)
+#endif
+
 static struct starpu_perfmodel homgate_perf_model =
 {
     .type = STARPU_HISTORY_BASED,
@@ -12,9 +22,10 @@ static struct starpu_perfmodel homgate_perf_model =
 
 struct starpu_codelet clHomNAND =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = {  HomGateWrap<P, -1, -1, P::μ>
                 },
+    TANGOR_CUDA_IMPL(CufheppHomNANDWrap)
     .cpu_funcs_name = { "HomNAND" },
     .nbuffers = 3,
     .modes = { STARPU_W, STARPU_R, STARPU_R },
@@ -23,9 +34,10 @@ struct starpu_codelet clHomNAND =
 
 struct starpu_codelet clHomNOR =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = {  HomGateWrap<P, -1, -1, -P::μ>
     },
+    TANGOR_CUDA_IMPL(CufheppHomNORWrap)
     .cpu_funcs_name = { "HomNOR" },
     .nbuffers = 3,
     .modes = { STARPU_W, STARPU_R, STARPU_R },
@@ -34,9 +46,10 @@ struct starpu_codelet clHomNOR =
 
 struct starpu_codelet clHomXNOR =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = {  HomGateWrap<P, -2, -2, -2*P::μ>
      },
+    TANGOR_CUDA_IMPL(CufheppHomXNORWrap)
     .cpu_funcs_name = { "HomXNOR" },
     .nbuffers = 3,
     .modes = { STARPU_W, STARPU_R, STARPU_R },
@@ -45,9 +58,10 @@ struct starpu_codelet clHomXNOR =
 
 struct starpu_codelet clHomAND =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = {  HomGateWrap<P, 1, 1, -P::μ>
     },
+    TANGOR_CUDA_IMPL(CufheppHomANDWrap)
     .cpu_funcs_name = { "HomAND" },
     .nbuffers = 3,
     .modes = { STARPU_W, STARPU_R, STARPU_R },
@@ -56,9 +70,10 @@ struct starpu_codelet clHomAND =
 
 struct starpu_codelet clHomOR =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = {  HomGateWrap<P, 1, 1, P::μ>
     },
+    TANGOR_CUDA_IMPL(CufheppHomORWrap)
     .cpu_funcs_name = { "HomOR" },
     .nbuffers = 3,
     .modes = { STARPU_W, STARPU_R, STARPU_R },
@@ -67,9 +82,10 @@ struct starpu_codelet clHomOR =
 
 struct starpu_codelet clHomXOR =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = {  HomGateWrap<P, 2, 2, 2*P::μ>
      },
+    TANGOR_CUDA_IMPL(CufheppHomXORWrap)
     .cpu_funcs_name = { "HomXOR" },
     .nbuffers = 3,
     .modes = { STARPU_W, STARPU_R, STARPU_R },
@@ -78,9 +94,10 @@ struct starpu_codelet clHomXOR =
 
 struct starpu_codelet clHomANDNY =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = {  HomGateWrap<P, -1, 1, -P::μ>
     },
+    TANGOR_CUDA_IMPL(CufheppHomANDNYWrap)
     .cpu_funcs_name = { "HomANDNY" },
     .nbuffers = 3,
     .modes = { STARPU_W, STARPU_R, STARPU_R },
@@ -89,9 +106,10 @@ struct starpu_codelet clHomANDNY =
 
 struct starpu_codelet clHomANDYN =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = {  HomGateWrap<P, 1, -1, -P::μ>
                 },
+    TANGOR_CUDA_IMPL(CufheppHomANDYNWrap)
     .cpu_funcs_name = { "HomANDYN" },
     .nbuffers = 3,
     .modes = { STARPU_W, STARPU_R, STARPU_R },
@@ -100,9 +118,10 @@ struct starpu_codelet clHomANDYN =
 
 struct starpu_codelet clHomORNY =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = {  HomGateWrap<P, -1, 1, P::μ>
                 },
+    TANGOR_CUDA_IMPL(CufheppHomORNYWrap)
     .cpu_funcs_name = { "HomORNY" },
     .nbuffers = 3,
     .modes = { STARPU_W, STARPU_R, STARPU_R },
@@ -111,8 +130,9 @@ struct starpu_codelet clHomORNY =
 
 struct starpu_codelet clHomORYN =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = {  HomGateWrap<P, 1, -1, P::μ>},
+    TANGOR_CUDA_IMPL(CufheppHomORYNWrap)
     .cpu_funcs_name = { "HomORYN" },
     .nbuffers = 3,
     .modes = { STARPU_W, STARPU_R, STARPU_R },
@@ -136,8 +156,9 @@ static struct starpu_perfmodel homnot_perf_model =
 
 struct starpu_codelet clHomNOT =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = { HomNOTWrap },
+    TANGOR_CUDA_IMPL(CufheppHomNOTWrap)
     .cpu_funcs_name = { "HomNOT" },
     .nbuffers = 2,
     .modes = { STARPU_W, STARPU_R},
@@ -169,8 +190,9 @@ static struct starpu_perfmodel hommux_perf_model =
 
 struct starpu_codelet clHomMUX =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = { HomMUXWrap },
+    TANGOR_CUDA_IMPL(CufheppHomMUXWrap)
     .cpu_funcs_name = { "HomMUX" },
     .nbuffers = 4,
     .modes = { STARPU_W, STARPU_R, STARPU_R, STARPU_R },
@@ -196,12 +218,16 @@ for(int i = 0; i<= P::k * P::n; i++) reinterpret_cast<typename P::T*>(STARPU_VEC
 
 struct starpu_codelet clHomNMUX =
 {
-    .where = STARPU_CPU,
+    .where = TANGOR_CODELET_WHERE,
     .cpu_funcs = { HomNMUXWrap },
+    TANGOR_CUDA_IMPL(CufheppHomNMUXWrap)
     .cpu_funcs_name = { "HomNMUX" },
     .nbuffers = 4,
     .modes = { STARPU_W, STARPU_R, STARPU_R, STARPU_R },
     .model = &hommux_perf_model
 };
+
+#undef TANGOR_CUDA_IMPL
+#undef TANGOR_CODELET_WHERE
 
 }

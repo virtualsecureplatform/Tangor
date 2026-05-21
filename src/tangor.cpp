@@ -45,6 +45,12 @@ int main (int argc, char* argv[]){
         return 1;
     }
 
+#ifdef USE_CUFHEPP
+    if (CufheppInitialize(ek))
+        std::cout << "Initialized cuFHEpp CUDA backend" << std::endl;
+    else
+        std::cout << "No StarPU CUDA worker found; using CPU codelets" << std::endl;
+#endif
 
 #ifdef USE_HOGE
     std::cout<<"Initializing HOGE"<<std::endl;
@@ -58,6 +64,7 @@ int main (int argc, char* argv[]){
     init = std::chrono::system_clock::now();
 
 	starpu_task_wait_for_all();
+    starpu_sync_outputs_to_host();
 
     end = std::chrono::system_clock::now();
     starpu_bound_stop();
@@ -74,6 +81,10 @@ int main (int argc, char* argv[]){
         starpu_bound_print_lp(f);
         fclose(f);
     }
+
+#ifdef USE_CUFHEPP
+    CufheppCleanUp();
+#endif
 
     starpu_shutdown();
 
@@ -98,6 +109,8 @@ int main (int argc, char* argv[]){
     {
         #ifdef USE_HOGE
         std::ofstream ofs("HOGE_runtime.txt",std::ios::app);
+        #elif defined(USE_CUFHEPP)
+        std::ofstream ofs("cuFHEpp_runtime.txt",std::ios::app);
         #else
         std::ofstream ofs("CPU_runtime.txt",std::ios::app);
         #endif

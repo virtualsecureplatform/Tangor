@@ -4,6 +4,10 @@ if(USE_HOGE)
 set(tangor_sources ${tangor_sources} hogewrapper.cpp)
 endif()
 
+if(TANGOR_USE_CUFHEPP_STARPU)
+set(tangor_sources ${tangor_sources} cufhepp_starpu.cu)
+endif()
+
 add_executable(tangor
   ${tangor_sources}
   )
@@ -14,6 +18,12 @@ find_package(OpenCL REQUIRED)
 target_link_libraries(tangor PRIVATE xcl2 rt)
 endif()
 
+if(TANGOR_USE_CUFHEPP_STARPU)
+find_package(CUDAToolkit REQUIRED)
+target_link_libraries(tangor PRIVATE cufhe_gpu CUDA::cudart)
+target_compile_definitions(tangor PRIVATE USE_CUFHEPP)
+endif()
+
 
 target_include_directories(tangor
   PRIVATE ${PROJECT_SOURCE_DIR}/include
@@ -22,8 +32,6 @@ target_include_directories(tangor
   )
 
 #For StarPU
-find_package(PkgConfig)
-pkg_check_modules(STARPU REQUIRED starpu-1.4)
 if (STARPU_FOUND)
     target_include_directories (tangor PUBLIC ${STARPU_INCLUDE_DIRS})
     target_compile_options     (tangor PRIVATE ${STARPU_CFLAGS_OTHER})
