@@ -16,6 +16,52 @@ Tangor uses `thirdparties/cuFHEpp` for the TFHEpp checkout at
 `thirdparties/cuFHEpp/thirdparties/TFHEpp`. It does not build cuFHEpp's CUDA
 library for the CPU path.
 
+## KVSP compatibility
+
+With the default `-DTANGOR_BUILD_KVSP_COMPAT=ON`, the build produces
+`build/bin/iyokan` and `build/bin/iyokan-packet` in addition to Tangor's
+native executable when StarPU is available. They implement the CLI and cereal packet/archive format
+expected by KVSP, including `plain`, `tfhe`, snapshots, key generation, and
+packet conversion. Point KVSP at them without changing the KVSP command line:
+
+```sh
+KVSP_IYOKAN_PATH="$PWD/build/bin/iyokan" \
+KVSP_IYOKAN_PACKET_PATH="$PWD/build/bin/iyokan-packet" \
+  /path/to/kvsp
+```
+
+The compatibility targets share the checked-out Iyokan frontend sources while
+linking to Tangor's selected TFHEpp build. This keeps packets, evaluation keys,
+and snapshots byte-compatible during the scheduler migration. Set
+`-DTANGOR_BUILD_KVSP_COMPAT=OFF` for a standalone Tangor-only build.
+If that checkout is not adjacent to Tangor, CMake fetches the pinned Iyokan
+frontend (including its submodules) by default; use
+`-DTANGOR_FETCH_IYOKAN_COMPAT=OFF` plus
+`TANGOR_IYOKAN_COMPAT_SOURCE_DIR` and
+`TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR` for an offline source mirror.
+
+When StarPU is available, `TANGOR_KVSP_STARPU_GATE_OFFLOAD=ON` (the default)
+routes the frontend's level-0 AND/NAND/ANDNOT/OR/NOR/ORNOT/XOR/XNOR/NOT/MUX
+operations through Tangor StarPU codelets. Disable it to compare the frontend
+against its original CPU gate path. The same dispatch layer covers the packed
+level-1 `CMUXFFT` ROM/RAM selector and RAM's `HomMUXwoSE` write selection.
+
+Tangor also accepts KVSP's existing Iyokan CMake cache variables, so its
+AVX2/AVX-512 build recipes can use Tangor as the source directory without
+renaming flags:
+
+```sh
+cmake -S /path/to/Tangor -B build/Iyokan-avx2 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DIYOKAN_ENABLE_CUDA=OFF \
+  -DIYOKAN_MARCH=x86-64-v3 \
+  -DUSE_AVX512=OFF
+cmake --build build/Iyokan-avx2 --target iyokan iyokan-packet
+```
+
+`IYOKAN_80BIT_SECURITY` and `IYOKAN_ENABLE_CUDA` are accepted as well; the
+latter maps to Tangor's cuFHEpp/StarPU CUDA configuration.
+
 To enable cuFHEpp CUDA gate kernels through StarPU CUDA workers:
 
 ```sh

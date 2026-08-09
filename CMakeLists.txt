@@ -1,17 +1,51 @@
 cmake_minimum_required(VERSION 3.18)
-set(CMAKE_CXX_FLAGS "-march=native -O3 -g")
+
+# Accept the cache variables used by KVSP's existing Iyokan build rules.  This
+# lets callers replace the source directory without changing their Makefile or
+# deployment scripts.
+set(IYOKAN_MARCH "native" CACHE STRING
+    "Target -march value accepted for Iyokan/KVSP compatibility")
+option(IYOKAN_ENABLE_CUDA
+       "Enable the CUDA-compatible Iyokan evaluator path" OFF)
+option(IYOKAN_80BIT_SECURITY
+       "Use Iyokan's 80-bit TFHE security parameter" OFF)
+if(IYOKAN_ENABLE_CUDA)
+    set(USE_CUFHEPP ON CACHE BOOL
+        "Use cuFHEpp CUDA gate kernels through StarPU CUDA workers" FORCE)
+    set(TANGOR_USE_BUNDLED_STARPU ON CACHE BOOL
+        "Build and use bundled StarPU instead of pkg-config StarPU" FORCE)
+    # Iyokan disables cuFHEpp key bundles for CUDA evaluation. Its RAM
+    # bootstrap path requires the regular BSK archive format, and retaining
+    # key bundles makes Iyokan-generated evaluation keys unreadable here.
+    set(USE_KEY_BUNDLE OFF CACHE BOOL
+        "Use regular cuFHEpp bootstrapping-key archives for Iyokan compatibility" FORCE)
+endif()
+if(IYOKAN_80BIT_SECURITY)
+    set(USE_80BIT_SECURITY ON CACHE BOOL "Use TFHEpp 80-bit security" FORCE)
+endif()
+
+set(CMAKE_CXX_FLAGS "-march=${IYOKAN_MARCH} -O3 -g")
+# TFHEpp reads this normal variable while Tangor adds it as a subdirectory.
+# Match Iyokan's forwarding behaviour so KVSP's AVX2 build is genuinely
+# portable rather than silently reverting to the host architecture.
+set(TFHEPP_MARCH "${IYOKAN_MARCH}")
 project(tangor CXX C)
 set(CMAKE_CXX_STANDARD 20)
 option(USE_HOGE "Use HOGE for 2-input gates" OFF)
 option(USE_CUFHEPP "Use cuFHEpp CUDA gate kernels through StarPU CUDA workers" OFF)
 option(TANGOR_USE_BUNDLED_STARPU "Build and use bundled StarPU instead of pkg-config StarPU" ${USE_CUFHEPP})
 option(TANGOR_BUILD_TESTS "Build Tangor test clients" ON)
+option(TANGOR_BUILD_KVSP_COMPAT "Build Iyokan command-line compatibility binaries for KVSP" ON)
+option(TANGOR_FETCH_IYOKAN_COMPAT
+       "Fetch the pinned Iyokan frontend when a local compatibility source is unavailable" ON)
+option(TANGOR_KVSP_STARPU_GATE_OFFLOAD "Dispatch KVSP/Iyokan level-0 gates through Tangor StarPU codelets when StarPU is available" ON)
 set(TANGOR_CUFHEPP_SOURCE_DIR "${PROJECT_SOURCE_DIR}/thirdparties/cuFHEpp" CACHE PATH "cuFHEpp checkout that provides TFHEpp")
 set(TANGOR_TFHEPP_SOURCE_DIR "" CACHE PATH "Optional TFHEpp checkout override; defaults to cuFHEpp's nested TFHEpp")
 set(TANGOR_BUNDLED_STARPU_MAX_CPUS "256" CACHE STRING "Bundled StarPU CPU-worker capacity; also sizes STARPU_NMAXWORKERS for many CUDA streams")
 set(TANGOR_BUNDLED_STARPU_MAX_COMBINED_WORKERS "1" CACHE STRING "Bundled StarPU combined-worker capacity; Tangor does not use parallel StarPU tasks")
 
 find_package(PkgConfig REQUIRED)
+find_package(Threads REQUIRED)
 set(TANGOR_STARPU_HAS_CUDA OFF)
 
 if(TANGOR_USE_BUNDLED_STARPU)
@@ -23,7 +57,6 @@ if(TANGOR_USE_BUNDLED_STARPU)
     endif()
 
     include(ExternalProject)
-    find_package(CUDAToolkit REQUIRED)
     find_package(Threads REQUIRED)
     foreach(tangor_starpu_tool IN ITEMS autoconf automake autoreconf bash libtool libtoolize make)
         string(TOUPPER "${tangor_starpu_tool}" tangor_starpu_tool_upper)
@@ -36,23 +69,35 @@ if(TANGOR_USE_BUNDLED_STARPU)
         endif()
     endforeach()
 
-    get_filename_component(TANGOR_CUDA_BIN_DIR "${CUDAToolkit_NVCC_EXECUTABLE}" DIRECTORY)
-    get_filename_component(TANGOR_CUDA_ROOT_DIR "${TANGOR_CUDA_BIN_DIR}" DIRECTORY)
-    list(GET CUDAToolkit_INCLUDE_DIRS 0 TANGOR_CUDA_INCLUDE_DIR)
-    set(TANGOR_CUDA_LIBRARY_DIR "${CUDAToolkit_LIBRARY_DIR}")
-
-    set(TANGOR_STARPU_HAS_CUDA ON)
+    if(USE_CUFHEPP)
+        find_package(CUDAToolkit REQUIRED)
+        get_filename_component(TANGOR_CUDA_BIN_DIR "${CUDAToolkit_NVCC_EXECUTABLE}" DIRECTORY)
+        get_filename_component(TANGOR_CUDA_ROOT_DIR "${TANGOR_CUDA_BIN_DIR}" DIRECTORY)
+        list(GET CUDAToolkit_INCLUDE_DIRS 0 TANGOR_CUDA_INCLUDE_DIR)
+        set(TANGOR_CUDA_LIBRARY_DIR "${CUDAToolkit_LIBRARY_DIR}")
+        set(TANGOR_STARPU_HAS_CUDA ON)
+        set(TANGOR_BUNDLED_STARPU_ENV
+            "PATH=${TANGOR_CUDA_BIN_DIR}:$ENV{PATH}"
+            "LD_LIBRARY_PATH=${TANGOR_CUDA_LIBRARY_DIR}:$ENV{LD_LIBRARY_PATH}"
+            "NVCC=${CUDAToolkit_NVCC_EXECUTABLE}"
+            "NVCCFLAGS=-arch=sm_80 -Wno-deprecated-gpu-targets")
+        set(TANGOR_BUNDLED_STARPU_CUDA_CONFIGURE_ARGS
+            "--enable-cuda"
+            "--with-cuda-dir='${TANGOR_CUDA_ROOT_DIR}'"
+            "--with-cuda-include-dir='${TANGOR_CUDA_INCLUDE_DIR}'"
+            "--with-cuda-lib-dir='${TANGOR_CUDA_LIBRARY_DIR}'"
+            "--with-cublas-dir='${TANGOR_CUDA_ROOT_DIR}'"
+            "--with-cublas-include-dir='${TANGOR_CUDA_INCLUDE_DIR}'"
+            "--with-cublas-lib-dir='${TANGOR_CUDA_LIBRARY_DIR}'")
+    else()
+        set(TANGOR_BUNDLED_STARPU_ENV "PATH=$ENV{PATH}")
+        set(TANGOR_BUNDLED_STARPU_CUDA_CONFIGURE_ARGS "--disable-cuda")
+    endif()
     set(TANGOR_BUNDLED_STARPU_PREFIX "${CMAKE_BINARY_DIR}/starpu-install")
     set(TANGOR_BUNDLED_STARPU_WORK_DIR "${CMAKE_BINARY_DIR}/starpu-build")
     set(TANGOR_BUNDLED_STARPU_LIBRARY "${TANGOR_BUNDLED_STARPU_PREFIX}/lib/libstarpu-1.4.so")
     set(TANGOR_BUNDLED_STARPU_INCLUDE_DIR "${TANGOR_BUNDLED_STARPU_PREFIX}/include/starpu/1.4")
     file(MAKE_DIRECTORY "${TANGOR_BUNDLED_STARPU_INCLUDE_DIR}" "${TANGOR_BUNDLED_STARPU_PREFIX}/lib")
-
-    set(TANGOR_BUNDLED_STARPU_ENV
-        "PATH=${TANGOR_CUDA_BIN_DIR}:$ENV{PATH}"
-        "LD_LIBRARY_PATH=${TANGOR_CUDA_LIBRARY_DIR}:$ENV{LD_LIBRARY_PATH}"
-        "NVCC=${CUDAToolkit_NVCC_EXECUTABLE}"
-        "NVCCFLAGS=-arch=sm_80 -Wno-deprecated-gpu-targets")
 
     ExternalProject_Add(tangor_starpu_external
         SOURCE_DIR "${PROJECT_SOURCE_DIR}/thirdparties/starpu"
@@ -70,13 +115,7 @@ if(TANGOR_USE_BUNDLED_STARPU)
              '${TANGOR_BUNDLED_STARPU_WORK_DIR}/src/configure' \
                 --prefix='<INSTALL_DIR>' \
                 --libdir='<INSTALL_DIR>/lib' \
-                --enable-cuda \
-                --with-cuda-dir='${TANGOR_CUDA_ROOT_DIR}' \
-                --with-cuda-include-dir='${TANGOR_CUDA_INCLUDE_DIR}' \
-                --with-cuda-lib-dir='${TANGOR_CUDA_LIBRARY_DIR}' \
-                --with-cublas-dir='${TANGOR_CUDA_ROOT_DIR}' \
-                --with-cublas-include-dir='${TANGOR_CUDA_INCLUDE_DIR}' \
-                --with-cublas-lib-dir='${TANGOR_CUDA_LIBRARY_DIR}' \
+                ${TANGOR_BUNDLED_STARPU_CUDA_CONFIGURE_ARGS} \
                 --enable-maxcpus='${TANGOR_BUNDLED_STARPU_MAX_CPUS}' \
                 --enable-maxcombinedworkers='${TANGOR_BUNDLED_STARPU_MAX_COMBINED_WORKERS}' \
                 --disable-opencl \
@@ -94,11 +133,29 @@ if(TANGOR_USE_BUNDLED_STARPU)
     add_library(tangor_starpu::starpu SHARED IMPORTED GLOBAL)
     set_target_properties(tangor_starpu::starpu PROPERTIES
         IMPORTED_LOCATION "${TANGOR_BUNDLED_STARPU_LIBRARY}"
-        INTERFACE_INCLUDE_DIRECTORIES "${TANGOR_BUNDLED_STARPU_INCLUDE_DIR}"
-        INTERFACE_LINK_LIBRARIES "Threads::Threads;CUDA::cudart;CUDA::cublas")
+        INTERFACE_INCLUDE_DIRECTORIES "${TANGOR_BUNDLED_STARPU_INCLUDE_DIR}")
+    if(TANGOR_STARPU_HAS_CUDA)
+        set_property(TARGET tangor_starpu::starpu APPEND PROPERTY
+            INTERFACE_LINK_LIBRARIES "Threads::Threads;CUDA::cudart;CUDA::cublas")
+    else()
+        set_property(TARGET tangor_starpu::starpu APPEND PROPERTY
+            INTERFACE_LINK_LIBRARIES "Threads::Threads")
+    endif()
     add_dependencies(tangor_starpu::starpu tangor_starpu_external)
 else()
-    pkg_check_modules(STARPU REQUIRED starpu-1.4)
+    pkg_check_modules(STARPU QUIET starpu-1.4)
+    if(NOT STARPU_FOUND)
+        if(TANGOR_BUILD_KVSP_COMPAT)
+            message(WARNING
+                "StarPU was not found; the `tangor` evaluator target will be "
+                "unavailable, but the KVSP packet compatibility tool will be built.")
+        else()
+            message(FATAL_ERROR
+                "StarPU was not found. Install starpu-1.4, configure with "
+                "-DTANGOR_USE_BUNDLED_STARPU=ON, or enable "
+                "-DTANGOR_BUILD_KVSP_COMPAT=ON to build packet tooling only.")
+        endif()
+    endif()
     foreach(starpu_include_dir IN LISTS STARPU_INCLUDE_DIRS)
         if(EXISTS "${starpu_include_dir}/starpu_config.h")
             file(STRINGS "${starpu_include_dir}/starpu_config.h" starpu_cuda_define
@@ -212,6 +269,66 @@ endif()
 list(REMOVE_ITEM TANGOR_TFHEPP_COMPILE_DEFINITIONS "")
 list(REMOVE_DUPLICATES TANGOR_TFHEPP_COMPILE_DEFINITIONS)
 add_compile_definitions(${TANGOR_TFHEPP_COMPILE_DEFINITIONS})
+
+# KVSP communicates with its FHE backend through `iyokan` and
+# `iyokan-packet`. Compile the reference packet/archive implementation with
+# Tangor's TFHEpp so generated keys, packets, and snapshots retain the exact
+# binary layout expected by KVSP.
+if(TANGOR_BUILD_KVSP_COMPAT)
+    set(TANGOR_IYOKAN_COMPAT_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../Iyokan/src"
+        CACHE PATH "Iyokan frontend source directory used by the KVSP compatibility target")
+    set(TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR "${PROJECT_SOURCE_DIR}/../Iyokan/thirdparty"
+        CACHE PATH "Iyokan frontend third-party directory used by the KVSP compatibility target")
+    set(tangor_iyokan_compat_missing FALSE)
+    foreach(tangor_compat_path IN ITEMS
+            "${TANGOR_IYOKAN_COMPAT_SOURCE_DIR}/iyokan-packet.cpp"
+            "${TANGOR_IYOKAN_COMPAT_SOURCE_DIR}/packet.hpp"
+            "${TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR}/CLI11/include/CLI/CLI.hpp"
+            "${TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR}/toml11/include/toml.hpp")
+        if(NOT EXISTS "${tangor_compat_path}")
+            set(tangor_iyokan_compat_missing TRUE)
+        endif()
+    endforeach()
+    if(tangor_iyokan_compat_missing AND TANGOR_FETCH_IYOKAN_COMPAT)
+        include(FetchContent)
+        FetchContent_Declare(tangor_iyokan_frontend
+            GIT_REPOSITORY https://github.com/virtualsecureplatform/Iyokan.git
+            GIT_TAG 97f0f3050ad25bce98712fa1d6b24af318abac64
+            GIT_SHALLOW TRUE
+            GIT_SUBMODULES_RECURSE TRUE)
+        FetchContent_GetProperties(tangor_iyokan_frontend)
+        if(NOT tangor_iyokan_frontend_POPULATED)
+            FetchContent_Populate(tangor_iyokan_frontend)
+        endif()
+        set(TANGOR_IYOKAN_COMPAT_SOURCE_DIR
+            "${tangor_iyokan_frontend_SOURCE_DIR}/src" CACHE PATH
+            "Iyokan frontend source directory used by the KVSP compatibility target" FORCE)
+        set(TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR
+            "${tangor_iyokan_frontend_SOURCE_DIR}/thirdparty" CACHE PATH
+            "Iyokan frontend third-party directory used by the KVSP compatibility target" FORCE)
+        set(tangor_iyokan_compat_missing FALSE)
+        foreach(tangor_compat_path IN ITEMS
+                "${TANGOR_IYOKAN_COMPAT_SOURCE_DIR}/iyokan-packet.cpp"
+                "${TANGOR_IYOKAN_COMPAT_SOURCE_DIR}/packet.hpp"
+                "${TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR}/CLI11/include/CLI/CLI.hpp"
+                "${TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR}/toml11/include/toml.hpp")
+            if(NOT EXISTS "${tangor_compat_path}")
+                set(tangor_iyokan_compat_missing TRUE)
+            endif()
+        endforeach()
+    endif()
+    if(tangor_iyokan_compat_missing)
+        message(FATAL_ERROR
+            "TANGOR_BUILD_KVSP_COMPAT could not find the Iyokan frontend. "
+            "Set TANGOR_IYOKAN_COMPAT_SOURCE_DIR and "
+            "TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR, enable "
+            "TANGOR_FETCH_IYOKAN_COMPAT, or disable the compatibility target.")
+    endif()
+    add_subdirectory("${TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR}/spdlog"
+                     "${CMAKE_BINARY_DIR}/iyokan-compat-spdlog")
+    add_subdirectory("${TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR}/backward-cpp"
+                     "${CMAKE_BINARY_DIR}/iyokan-compat-backward")
+endif()
 add_subdirectory(src)
 
 if(TANGOR_BUILD_TESTS)
