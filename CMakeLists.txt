@@ -239,11 +239,13 @@ foreach(def IN ITEMS
     USE_80BIT_SECURITY
     USE_COMPRESS
     USE_CGGI19
+    USE_BLOCK_BINARY
     USE_CONCRETE
     USE_TFHE_RS
     USE_TERNARY
     USE_TERNARY_CMUX
     USE_KEY_BUNDLE
+    USE_SUBSET_KEY
     USE_FFTW3
     USE_MKL
     USE_SPQLIOX_AARCH64
@@ -293,7 +295,7 @@ if(TANGOR_BUILD_KVSP_COMPAT)
         include(FetchContent)
         FetchContent_Declare(tangor_iyokan_frontend
             GIT_REPOSITORY https://github.com/virtualsecureplatform/Iyokan.git
-            GIT_TAG 97f0f3050ad25bce98712fa1d6b24af318abac64
+            GIT_TAG ecb211029e668e5c45389ed9fd1d66e9193a663b
             GIT_SHALLOW TRUE
             GIT_SUBMODULES_RECURSE TRUE)
         FetchContent_GetProperties(tangor_iyokan_frontend)

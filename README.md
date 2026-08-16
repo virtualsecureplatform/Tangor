@@ -16,6 +16,11 @@ Tangor uses `thirdparties/cuFHEpp` for the TFHEpp checkout at
 `thirdparties/cuFHEpp/thirdparties/TFHEpp`. It does not build cuFHEpp's CUDA
 library for the CPU path.
 
+The default TFHE configuration is Block Binary keys with Subset Keys
+(`USE_BLOCK_BINARY=ON`, `USE_SUBSET_KEY=ON`). Regenerate secret/evaluation
+keys, encrypted packets, and snapshots after upgrading, since artifacts made
+with the former defaults are not compatible.
+
 ## KVSP compatibility
 
 With the default `-DTANGOR_BUILD_KVSP_COMPAT=ON`, the build produces
