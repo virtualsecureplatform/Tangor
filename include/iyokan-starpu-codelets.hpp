@@ -22,6 +22,23 @@ enum class IyokanBinaryGate {
     XNOR,
 };
 
+#ifdef USE_CUFHEPP
+// cuFHEpp support for the level-0 gate representation used by Iyokan/KVSP.
+// These are separate from Tangor's legacy level-1 CUDA wrappers.
+bool initializeIyokanCufhepp(const TFHEpp::EvalKey& evalKey);
+void cleanupIyokanCufhepp();
+
+void iyokanCufheppHomAND(void* buffers[], void* clArg);
+void iyokanCufheppHomNAND(void* buffers[], void* clArg);
+void iyokanCufheppHomANDNOT(void* buffers[], void* clArg);
+void iyokanCufheppHomOR(void* buffers[], void* clArg);
+void iyokanCufheppHomNOR(void* buffers[], void* clArg);
+void iyokanCufheppHomORNOT(void* buffers[], void* clArg);
+void iyokanCufheppHomXOR(void* buffers[], void* clArg);
+void iyokanCufheppHomXNOR(void* buffers[], void* clArg);
+void iyokanCufheppHomMUX(void* buffers[], void* clArg);
+#endif
+
 void runIyokanStarpuBinaryGate(IyokanBinaryGate gate, IyokanTLWE& output,
                                const IyokanTLWE& left,
                                const IyokanTLWE& right,

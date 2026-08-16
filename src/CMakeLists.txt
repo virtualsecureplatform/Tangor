@@ -103,7 +103,8 @@ if(TANGOR_BUILD_KVSP_COMPAT)
         IYOKAN_GIT_REVISION="tangor-compat")
     if(TANGOR_USE_CUFHEPP_STARPU)
         target_sources(iyokan PRIVATE
-            "${TANGOR_IYOKAN_COMPAT_SOURCE_DIR}/iyokan_cufhe.cpp")
+            "${TANGOR_IYOKAN_COMPAT_SOURCE_DIR}/iyokan_cufhe.cpp"
+            iyokan-cufhepp-starpu.cu)
         target_link_libraries(iyokan PRIVATE cufhe_gpu CUDA::cudart)
         # cuFHEpp's cufhe_gpu target is normally configured at a project root
         # that also exposes this directory.  Tangor nests it, so preserve the

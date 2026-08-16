@@ -77,8 +77,27 @@ cmake --build build -j
 
 When `USE_CUFHEPP=ON`, Tangor builds the bundled `thirdparties/starpu` with
 CUDA support by default, then builds cuFHEpp's `cufhe_gpu` target and adds CUDA
-implementations to the StarPU gate codelets. CPU implementations remain
-available as StarPU fallbacks.
+implementations to the StarPU gate codelets. The KVSP-compatible `iyokan`
+binary uses those same codelets when it is run without `--enable-gpu`; its
+ordinary level-0 bootstrapped gates can therefore run on either CPU or CUDA
+workers. CPU implementations remain available as StarPU fallbacks. Linear
+NOT and the packed RAM/ROM selector codelets currently remain CPU-only.
+
+To use the Tangor compatibility binary from KVSP with both worker types,
+build KVSP against Tangor and keep both worker counts nonzero at runtime:
+
+```sh
+make -C /path/to/kvsp ENABLE_CUDA=1 IYOKAN_SOURCE=/path/to/Tangor iyokan-avx2
+STARPU_NCPU=16 STARPU_NCUDA=2 STARPU_NWORKER_PER_CUDA=8 \
+  /path/to/kvsp/build/bin/kvsp run ...
+```
+
+StarPU assigns each ready GPU-capable gate to an available CPU or CUDA worker;
+the exact split depends on the circuit, contention, and scheduler. Use
+`STARPU_SCHED=eager` when experimenting with a mixed worker pool, or set
+`STARPU_NCPU=0` to force the GPU-capable gates onto CUDA. Do not pass
+Iyokan's `--enable-gpu` flag for this route: that selects Iyokan's separate
+cuFHE frontend rather than Tangor's mixed StarPU scheduler.
 
 StarPU uses one CUDA stream per CUDA worker. Set `STARPU_NWORKER_PER_CUDA` at
 runtime to control streams per GPU. For A100-style one-block cuFHEpp kernels,

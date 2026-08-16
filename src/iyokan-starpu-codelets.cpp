@@ -37,6 +37,9 @@ void ensureStarpu(const TFHEpp::EvalKey& evalKey)
     else if (currentEvalKey != &evalKey)
         throw std::runtime_error(
             "Tangor's KVSP StarPU backend cannot evaluate two keys in one process");
+#ifdef USE_CUFHEPP
+    initializeIyokanCufhepp(evalKey);
+#endif
 }
 
 template <int caSign, int cbSign,
@@ -130,6 +133,16 @@ starpu_codelet makeCodelet(Function function, const char* name,
     return codelet;
 }
 
+#ifdef USE_CUFHEPP
+void addCudaImplementation(starpu_codelet& codelet,
+                           starpu_cuda_func_t cudaFunction)
+{
+    codelet.where = STARPU_CPU | STARPU_CUDA;
+    codelet.cuda_funcs[0] = cudaFunction;
+    codelet.cuda_flags[0] = STARPU_CUDA_ASYNC;
+}
+#endif
+
 #define TANGOR_BINARY_CODELET(name, caSign, cbSign, offset)                     \
     starpu_codelet name = makeCodelet(                                         \
         binaryCodelet<caSign, cbSign, offset>, #name,                           \
@@ -144,10 +157,38 @@ TANGOR_BINARY_CODELET(orNotCodelet, 1, -1, P::μ);
 TANGOR_BINARY_CODELET(xorCodelet, 2, 2, 2 * P::μ);
 TANGOR_BINARY_CODELET(xnorCodelet, -2, -2, -2 * P::μ);
 
+#ifdef USE_CUFHEPP
+struct IyokanCudaCodeletInitializer {
+    IyokanCudaCodeletInitializer()
+    {
+        addCudaImplementation(andCodelet, iyokanCufheppHomAND);
+        addCudaImplementation(nandCodelet, iyokanCufheppHomNAND);
+        addCudaImplementation(andNotCodelet, iyokanCufheppHomANDNOT);
+        addCudaImplementation(orCodelet, iyokanCufheppHomOR);
+        addCudaImplementation(norCodelet, iyokanCufheppHomNOR);
+        addCudaImplementation(orNotCodelet, iyokanCufheppHomORNOT);
+        addCudaImplementation(xorCodelet, iyokanCufheppHomXOR);
+        addCudaImplementation(xnorCodelet, iyokanCufheppHomXNOR);
+    }
+};
+
+IyokanCudaCodeletInitializer iyokanCudaCodeletInitializer;
+#endif
+
 starpu_codelet notStarpuCodelet =
     makeCodelet(notCodelet, "IyokanNOT", {STARPU_W, STARPU_R});
 starpu_codelet muxStarpuCodelet = makeCodelet(
     muxCodelet, "IyokanMUX", {STARPU_W, STARPU_R, STARPU_R, STARPU_R});
+#ifdef USE_CUFHEPP
+struct IyokanMuxCudaCodeletInitializer {
+    IyokanMuxCudaCodeletInitializer()
+    {
+        addCudaImplementation(muxStarpuCodelet, iyokanCufheppHomMUX);
+    }
+};
+
+IyokanMuxCudaCodeletInitializer iyokanMuxCudaCodeletInitializer;
+#endif
 starpu_codelet cmuxFFTStarpuCodelet = makeCodelet(
     cmuxFFTCodelet, "IyokanCMUXFFT", {STARPU_W, STARPU_R, STARPU_R, STARPU_R});
 starpu_codelet muxWoSEStarpuCodelet = makeCodelet(
