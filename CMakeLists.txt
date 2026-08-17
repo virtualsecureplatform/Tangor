@@ -38,7 +38,7 @@ option(TANGOR_BUILD_TESTS "Build Tangor test clients" ON)
 option(TANGOR_BUILD_KVSP_COMPAT "Build Iyokan command-line compatibility binaries for KVSP" ON)
 option(TANGOR_FETCH_IYOKAN_COMPAT
        "Fetch the pinned Iyokan frontend when a local compatibility source is unavailable" ON)
-option(TANGOR_KVSP_STARPU_GATE_OFFLOAD "Dispatch KVSP/Iyokan level-0 gates through Tangor StarPU codelets when StarPU is available" ON)
+option(TANGOR_KVSP_STARPU_GATE_OFFLOAD "Use the experimental StarPU gate-offload backend for KVSP/Iyokan level-0 gates" OFF)
 set(TANGOR_CUFHEPP_SOURCE_DIR "${PROJECT_SOURCE_DIR}/thirdparties/cuFHEpp" CACHE PATH "cuFHEpp checkout that provides TFHEpp")
 set(TANGOR_TFHEPP_SOURCE_DIR "" CACHE PATH "Optional TFHEpp checkout override; defaults to cuFHEpp's nested TFHEpp")
 set(TANGOR_BUNDLED_STARPU_MAX_CPUS "256" CACHE STRING "Bundled StarPU CPU-worker capacity; also sizes STARPU_NMAXWORKERS for many CUDA streams")

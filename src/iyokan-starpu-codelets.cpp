@@ -1,13 +1,20 @@
 #include "iyokan-starpu-codelets.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdlib>
 #include <mutex>
 #include <stdexcept>
+#include <unordered_map>
 
 #include <starpu.h>
 
 namespace Tangor {
+struct IyokanStarpuTask::State {
+    std::atomic_bool finished{false};
+    starpu_data_handle_t output{};
+};
+
 namespace {
 
 using P = TFHEpp::lvl0param;
@@ -16,6 +23,51 @@ const TFHEpp::EvalKey* currentEvalKey = nullptr;
 std::mutex backendMutex;
 std::once_flag starpuInitOnce;
 int starpuInitStatus = -1;
+
+std::mutex persistentHandlesMutex;
+std::unordered_map<P::T*, starpu_data_handle_t> persistentHandles;
+thread_local bool captureActive = false;
+thread_local std::shared_ptr<IyokanStarpuTask> capturedTask;
+
+starpu_data_handle_t persistentHandleFor(IyokanTLWE& value)
+{
+    auto* data = value.data();
+    std::lock_guard<std::mutex> lock(persistentHandlesMutex);
+    const auto it = persistentHandles.find(data);
+    if (it != persistentHandles.end())
+        return it->second;
+
+    starpu_data_handle_t handle{};
+    starpu_vector_data_register(&handle, STARPU_MAIN_RAM,
+                                reinterpret_cast<uintptr_t>(data),
+                                value.size(), sizeof(P::T));
+    persistentHandles.emplace(data, handle);
+    return handle;
+}
+
+void taskCompleted(void* arg)
+{
+    auto* state = static_cast<IyokanStarpuTask::State*>(arg);
+    const int status = starpu_data_acquire_cb(
+        state->output, STARPU_R,
+        [](void* completedArg) {
+            auto* completed = static_cast<IyokanStarpuTask::State*>(completedArg);
+            starpu_data_release(completed->output);
+            completed->finished.store(true, std::memory_order_release);
+        },
+        state);
+    if (status != 0)
+        throw std::runtime_error("Tangor could not queue a StarPU host copy");
+}
+
+void captureTask(std::shared_ptr<IyokanStarpuTask> task)
+{
+    if (!captureActive)
+        return;
+    if (capturedTask)
+        throw std::runtime_error("Tangor captured more than one Iyokan gate");
+    capturedTask = std::move(task);
+}
 
 void ensureStarpuRuntime()
 {
@@ -236,6 +288,37 @@ void submitAndWait(starpu_codelet& codelet, std::array<IyokanTLWE*, Count> value
         starpu_data_unregister(handle);
 }
 
+template <size_t Count>
+std::shared_ptr<IyokanStarpuTask> submitAsync(
+    starpu_codelet& codelet, std::array<IyokanTLWE*, Count> values)
+{
+    std::array<starpu_data_handle_t, Count> handles{};
+    for (size_t i = 0; i < Count; ++i)
+        handles[i] = persistentHandleFor(*values[i]);
+
+    auto state = std::make_shared<IyokanStarpuTask::State>();
+    state->output = handles[0];
+    int status = 0;
+    if constexpr (Count == 2)
+        status = starpu_task_insert(
+            &codelet, STARPU_W, handles[0], STARPU_R, handles[1],
+            STARPU_CALLBACK_WITH_ARG_NFREE, taskCompleted, state.get(), 0);
+    else if constexpr (Count == 3)
+        status = starpu_task_insert(
+            &codelet, STARPU_W, handles[0], STARPU_R, handles[1], STARPU_R,
+            handles[2], STARPU_CALLBACK_WITH_ARG_NFREE, taskCompleted,
+            state.get(), 0);
+    else
+        status = starpu_task_insert(
+            &codelet, STARPU_W, handles[0], STARPU_R, handles[1], STARPU_R,
+            handles[2], STARPU_R, handles[3], STARPU_CALLBACK_WITH_ARG_NFREE,
+            taskCompleted, state.get(), 0);
+    if (status != 0)
+        throw std::runtime_error("Tangor could not submit an asynchronous StarPU gate");
+    return std::shared_ptr<IyokanStarpuTask>(
+        new IyokanStarpuTask(std::move(state)));
+}
+
 void submitVariableAndWait(starpu_codelet& codelet,
                            const std::array<void*, 4>& values,
                            const std::array<size_t, 4>& sizes)
@@ -258,11 +341,65 @@ void submitVariableAndWait(starpu_codelet& codelet,
 
 }  // namespace
 
+IyokanStarpuTask::IyokanStarpuTask(std::shared_ptr<State> state)
+    : state_(std::move(state))
+{
+}
+
+bool IyokanStarpuTask::isFinished() const
+{
+    return state_->finished.load(std::memory_order_acquire);
+}
+
+void IyokanStarpuTask::synchronizeOutput() const
+{
+    // Completion is published only after taskCompleted's asynchronous host
+    // acquisition has made this value coherent in main memory.
+}
+
+void beginIyokanStarpuCapture()
+{
+    if (captureActive)
+        throw std::runtime_error("Tangor nested an Iyokan StarPU capture");
+    captureActive = true;
+    capturedTask.reset();
+}
+
+std::shared_ptr<IyokanStarpuTask> endIyokanStarpuCapture()
+{
+    if (!captureActive)
+        throw std::runtime_error("Tangor ended an inactive Iyokan StarPU capture");
+    captureActive = false;
+    return std::move(capturedTask);
+}
+
+void markIyokanTLWEHostWrite(IyokanTLWE& value)
+{
+    starpu_data_handle_t handle{};
+    {
+        std::lock_guard<std::mutex> lock(persistentHandlesMutex);
+        const auto it = persistentHandles.find(value.data());
+        if (it == persistentHandles.end())
+            return;
+        handle = it->second;
+    }
+    if (starpu_data_acquire(handle, STARPU_W) != 0)
+        throw std::runtime_error("Tangor could not mark a CPU TLWE write");
+    starpu_data_release(handle);
+}
+
 void runIyokanStarpuBinaryGate(IyokanBinaryGate gate, IyokanTLWE& output,
                                const IyokanTLWE& left, const IyokanTLWE& right,
                                const TFHEpp::EvalKey& evalKey)
 {
     ensureStarpu(evalKey);
+    if (captureActive) {
+        captureTask(submitAsync(codeletFor(gate),
+                                std::array{&output,
+                                           const_cast<IyokanTLWE*>(&left),
+                                           const_cast<IyokanTLWE*>(&right)}));
+        return;
+    }
     submitAndWait(codeletFor(gate),
                   std::array{&output, const_cast<IyokanTLWE*>(&left),
                              const_cast<IyokanTLWE*>(&right)});
@@ -273,6 +410,12 @@ void runIyokanStarpuNot(IyokanTLWE& output, const IyokanTLWE& input)
     // NOT is linear and does not need an evaluation key, but it still uses the
     // same StarPU lifetime as the bootstrapped gates.
     ensureStarpuRuntime();
+    if (captureActive) {
+        captureTask(submitAsync(notStarpuCodelet,
+                                std::array{&output,
+                                           const_cast<IyokanTLWE*>(&input)}));
+        return;
+    }
     submitAndWait(notStarpuCodelet,
                   std::array{&output, const_cast<IyokanTLWE*>(&input)});
 }
@@ -283,6 +426,14 @@ void runIyokanStarpuMux(IyokanTLWE& output, const IyokanTLWE& select,
                         const TFHEpp::EvalKey& evalKey)
 {
     ensureStarpu(evalKey);
+    if (captureActive) {
+        captureTask(submitAsync(
+            muxStarpuCodelet,
+            std::array{&output, const_cast<IyokanTLWE*>(&select),
+                       const_cast<IyokanTLWE*>(&whenTrue),
+                       const_cast<IyokanTLWE*>(&whenFalse)}));
+        return;
+    }
     submitAndWait(muxStarpuCodelet,
                   std::array{&output, const_cast<IyokanTLWE*>(&select),
                              const_cast<IyokanTLWE*>(&whenTrue),

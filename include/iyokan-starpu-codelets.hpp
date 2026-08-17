@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <tfhe++.hpp>
 
 namespace Tangor {
@@ -21,6 +23,43 @@ enum class IyokanBinaryGate {
     XOR,
     XNOR,
 };
+
+// A non-blocking StarPU submission used by the KVSP task frontend.  The
+// frontend polls this object before propagating a circuit value, at which
+// point synchronizeOutput() makes the result available to ordinary CPU-only
+// RAM/ROM tasks as well.
+class IyokanStarpuTask {
+public:
+    struct State;
+
+    explicit IyokanStarpuTask(std::shared_ptr<State> state);
+    bool isFinished() const;
+    void synchronizeOutput() const;
+
+private:
+    std::shared_ptr<State> state_;
+
+    friend void beginIyokanStarpuCapture();
+    friend std::shared_ptr<IyokanStarpuTask> endIyokanStarpuCapture();
+    friend void runIyokanStarpuBinaryGate(IyokanBinaryGate, IyokanTLWE&,
+                                          const IyokanTLWE&,
+                                          const IyokanTLWE&,
+                                          const TFHEpp::EvalKey&);
+    friend void runIyokanStarpuNot(IyokanTLWE&, const IyokanTLWE&);
+    friend void runIyokanStarpuMux(IyokanTLWE&, const IyokanTLWE&,
+                                   const IyokanTLWE&, const IyokanTLWE&,
+                                   const TFHEpp::EvalKey&);
+};
+
+// These delimit the synchronous Iyokan task body.  When active, ordinary
+// gate calls enqueue one StarPU task and return immediately; outside this
+// scope the public gate API retains its synchronous behaviour.
+void beginIyokanStarpuCapture();
+std::shared_ptr<IyokanStarpuTask> endIyokanStarpuCapture();
+
+// Tell the persistent-handle registry that a CPU-only Iyokan task has
+// overwritten a level-0 value.
+void markIyokanTLWEHostWrite(IyokanTLWE& value);
 
 #ifdef USE_CUFHEPP
 // cuFHEpp support for the level-0 gate representation used by Iyokan/KVSP.

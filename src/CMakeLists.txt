@@ -103,8 +103,7 @@ if(TANGOR_BUILD_KVSP_COMPAT)
         IYOKAN_GIT_REVISION="tangor-compat")
     if(TANGOR_USE_CUFHEPP_STARPU)
         target_sources(iyokan PRIVATE
-            "${TANGOR_IYOKAN_COMPAT_SOURCE_DIR}/iyokan_cufhe.cpp"
-            iyokan-cufhepp-starpu.cu)
+            "${TANGOR_IYOKAN_COMPAT_SOURCE_DIR}/iyokan_cufhe.cpp")
         target_link_libraries(iyokan PRIVATE cufhe_gpu CUDA::cudart)
         # cuFHEpp's cufhe_gpu target is normally configured at a project root
         # that also exposes this directory.  Tangor nests it, so preserve the
@@ -121,12 +120,26 @@ if(TANGOR_BUILD_KVSP_COMPAT)
     # remain shared while the gate execution path migrates independently.
     if(TANGOR_KVSP_STARPU_GATE_OFFLOAD AND
             (TANGOR_USE_BUNDLED_STARPU OR STARPU_FOUND))
-        target_sources(iyokan PRIVATE iyokan-starpu-codelets.cpp)
+        target_sources(iyokan PRIVATE
+            iyokan-starpu-codelets.cpp
+            iyokan-cufhepp-starpu.cu)
         target_include_directories(iyokan PRIVATE "${PROJECT_SOURCE_DIR}/include")
-        set_source_files_properties(
-            "${TANGOR_IYOKAN_COMPAT_SOURCE_DIR}/iyokan_tfhepp.cpp"
-            PROPERTIES COMPILE_OPTIONS
-            "-include;${PROJECT_SOURCE_DIR}/include/iyokan-starpu-offload.hpp")
+        # iyokan_tfhepp.hpp defines the gate-task methods inline.  Applying
+        # the offload substitution to only iyokan_tfhepp.cpp leaves different
+        # definitions of those methods in main.cpp and iyokan_cufhe.cpp; the
+        # linker may then select the CPU definition.  Force the shim into
+        # every translation unit that includes this header, so the program has
+        # exactly one, StarPU-backed definition of every task method.
+        foreach(tangor_iyokan_offload_source IN ITEMS
+                main.cpp
+                iyokan.cpp
+                iyokan_tfhepp.cpp
+                iyokan_cufhe.cpp)
+            set_source_files_properties(
+                "${TANGOR_IYOKAN_COMPAT_SOURCE_DIR}/${tangor_iyokan_offload_source}"
+                PROPERTIES COMPILE_OPTIONS
+                "-include;${PROJECT_SOURCE_DIR}/include/iyokan-starpu-offload.hpp")
+        endforeach()
         if(TANGOR_USE_BUNDLED_STARPU)
             add_dependencies(iyokan tangor_starpu_external)
             target_link_libraries(iyokan PRIVATE tangor_starpu::starpu)

@@ -13,6 +13,11 @@
 
 #include "iyokan-starpu-codelets.hpp"
 
+// Iyokan's ordinary TaskAsync wrapper waits for the entire gate call inside
+// one host thread.  The Tangor compatibility target replaces it with a
+// StarPU-aware variant defined in iyokan_tfhepp.hpp.
+#define TANGOR_KVSP_STARPU_ASYNC 1
+
 namespace TFHEpp {
 
 template <class brP, typename brP::targetP::T μ, class iksP>
