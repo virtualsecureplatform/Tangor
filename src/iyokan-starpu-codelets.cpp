@@ -294,6 +294,16 @@ void runIyokanStarpuCMUXFFT(IyokanTRLWE& output,
                             const IyokanTRLWE& whenTrue,
                             const IyokanTRLWE& whenFalse)
 {
+    // The RAM selector updates its accumulator in place.  Registering that
+    // same object as both the write buffer and a separate read buffer creates
+    // two StarPU handles for one allocation, which is invalid and can crash
+    // during RAM evaluation.  Keep this CPU-only selector operation local in
+    // the aliased case; it has no CUDA implementation yet in any event.
+    if (&output == &whenTrue || &output == &whenFalse) {
+        TFHEpp::CMUXFFT<TFHEpp::lvl1param>(output, select, whenTrue,
+                                           whenFalse);
+        return;
+    }
     ensureStarpuRuntime();
     submitVariableAndWait(
         cmuxFFTStarpuCodelet,
