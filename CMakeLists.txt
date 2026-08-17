@@ -295,7 +295,7 @@ if(TANGOR_BUILD_KVSP_COMPAT)
         include(FetchContent)
         FetchContent_Declare(tangor_iyokan_frontend
             GIT_REPOSITORY https://github.com/virtualsecureplatform/Iyokan.git
-            GIT_TAG ecb211029e668e5c45389ed9fd1d66e9193a663b
+            GIT_TAG 8c2d26e19bb91740abf478bd0204e3b8eb10a84f
             GIT_SHALLOW TRUE
             GIT_SUBMODULES_RECURSE TRUE)
         FetchContent_GetProperties(tangor_iyokan_frontend)

@@ -25,7 +25,7 @@ with the former defaults are not compatible.
 
 With the default `-DTANGOR_BUILD_KVSP_COMPAT=ON`, the build produces
 `build/bin/iyokan` and `build/bin/iyokan-packet` in addition to Tangor's
-native executable when StarPU is available. They implement the CLI and cereal packet/archive format
+native executable. They implement the CLI and cereal packet/archive format
 expected by KVSP, including `plain`, `tfhe`, snapshots, key generation, and
 packet conversion. Point KVSP at them without changing the KVSP command line:
 
@@ -45,88 +45,68 @@ frontend (including its submodules) by default; use
 `TANGOR_IYOKAN_COMPAT_SOURCE_DIR` and
 `TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR` for an offline source mirror.
 
-When StarPU is available, `TANGOR_KVSP_STARPU_GATE_OFFLOAD=ON` (the default)
-routes the frontend's level-0 AND/NAND/ANDNOT/OR/NOR/ORNOT/XOR/XNOR/NOT/MUX
-operations through Tangor StarPU codelets. Disable it to compare the frontend
-against its original CPU gate path. The same dispatch layer covers the packed
-level-1 `CMUXFFT` ROM/RAM selector and RAM's `HomMUXwoSE` write selection.
+### GPU execution (recommended)
 
-Tangor also accepts KVSP's existing Iyokan CMake cache variables, so its
-AVX2/AVX-512 build recipes can use Tangor as the source directory without
-renaming flags:
+The default KVSP GPU path uses Iyokan's native cuFHE frontend, built through
+Tangor's compatibility target. It keeps the ordinary gate graph and the
+GPU-compatible RAM/ROM work on the native multi-stream CUDA path, while the
+requested CPU worker pool performs the frontend work. This is the released
+high-performance configuration; pass `--enable-gpu` at runtime.
+
+Tangor accepts KVSP's Iyokan CMake cache variables, so KVSP can use Tangor as
+its source directory without renaming build flags:
 
 ```sh
+git submodule update --init --recursive
 cmake -S /path/to/Tangor -B build/Iyokan-avx2 \
   -DCMAKE_BUILD_TYPE=Release \
-  -DIYOKAN_ENABLE_CUDA=OFF \
+  -DIYOKAN_ENABLE_CUDA=ON \
   -DIYOKAN_MARCH=x86-64-v3 \
   -DUSE_AVX512=OFF
 cmake --build build/Iyokan-avx2 --target iyokan iyokan-packet
 ```
 
-`IYOKAN_80BIT_SECURITY` and `IYOKAN_ENABLE_CUDA` are accepted as well; the
-latter maps to Tangor's cuFHEpp/StarPU CUDA configuration.
-
-To enable cuFHEpp CUDA gate kernels through StarPU CUDA workers:
-
-```sh
-git submodule update --init --recursive
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_CUFHEPP=ON
-cmake --build build -j
-```
-
-When `USE_CUFHEPP=ON`, Tangor builds the bundled `thirdparties/starpu` with
-CUDA support by default, then builds cuFHEpp's `cufhe_gpu` target and adds CUDA
-implementations to the StarPU gate codelets. The KVSP-compatible `iyokan`
-binary uses those same codelets when it is run without `--enable-gpu`; its
-ordinary level-0 bootstrapped gates can therefore run on either CPU or CUDA
-workers. CPU implementations remain available as StarPU fallbacks. Linear
-NOT and the packed RAM/ROM selector codelets currently remain CPU-only.
-
-To use the Tangor compatibility binary from KVSP with both worker types,
-build KVSP against Tangor and keep both worker counts nonzero at runtime:
+To have KVSP build that compatibility target in its normal location:
 
 ```sh
 make -C /path/to/kvsp ENABLE_CUDA=1 IYOKAN_SOURCE=/path/to/Tangor iyokan-avx2
-STARPU_NCPU=16 STARPU_NCUDA=2 STARPU_NWORKER_PER_CUDA=8 \
-  /path/to/kvsp/build/bin/kvsp run ...
 ```
 
-StarPU assigns each ready GPU-capable gate to an available CPU or CUDA worker;
-the exact split depends on the circuit, contention, and scheduler. Use
-`STARPU_SCHED=eager` when experimenting with a mixed worker pool, or set
-`STARPU_NCPU=0` to force the GPU-capable gates onto CUDA. Do not pass
-Iyokan's `--enable-gpu` flag for this route: that selects Iyokan's separate
-cuFHE frontend rather than Tangor's mixed StarPU scheduler.
-
-StarPU uses one CUDA stream per CUDA worker. Set `STARPU_NWORKER_PER_CUDA` at
-runtime to control streams per GPU. For A100-style one-block cuFHEpp kernels,
-matching the worker count to the SM count is a useful experiment:
+Run with both CPU and GPU resources. For example, this uses 64 CPU workers and
+two GPUs:
 
 ```sh
-ulimit -s unlimited
-STARPU_NCPU=0 STARPU_NCUDA=2 STARPU_NWORKER_PER_CUDA=108 bash test.bash
+/path/to/kvsp/build/bin/iyokan-avx2 tfhe --enable-gpu --cpu 64 --num-gpu 2 \
+  --evalkey eval.key -c 224 -o result.enc --snapshot result.snapshot \
+  --blueprint /path/to/kvsp/build/share/kvsp/alexandrite.toml -i fib.enc
 ```
 
-The bundled StarPU build reserves enough worker slots for two 108-SM GPUs by
-default. For larger systems, raise `TANGOR_BUNDLED_STARPU_MAX_CPUS` at CMake
-configure time. Keep `STARPU_CUDA_THREAD_PER_WORKER` unset unless you
-specifically want one CPU-side StarPU driver thread per CUDA stream; Tangor's
-CUDA codelets are asynchronous, so that setting is not needed for stream
-concurrency.
-
-The bundled StarPU path needs CUDA plus StarPU's autotools bootstrap
-dependencies. On Ubuntu, install at least:
+The evaluator cannot inspect encrypted termination itself. For KVSP's bundled
+`fib(5)` input, a plaintext emulator establishes that 224 cycles are required.
+Decrypt the resulting packet to confirm `f0 = true` and `x10 = 5`:
 
 ```sh
-sudo apt-get install autoconf automake libtool libtool-bin make
+/path/to/kvsp/build/bin/kvsp dec --cpu alexandrite -k secret.key -i result.enc
 ```
 
-To use a system StarPU instead, configure with `-DTANGOR_USE_BUNDLED_STARPU=OFF`.
-If that StarPU was built without CUDA support, CMake prints a warning and builds
-the CPU codelets only.
+On two A100 GPUs, the full 224-cycle Fibonacci workload was verified against
+Iyokan with byte-identical decrypted packets; Tangor completed in 221.02 s and
+Iyokan in 219.44 s in that sample.
 
-Set `TANGOR_WRITE_STARPU_BOUND_LP=1` at runtime to emit `minimum_runtime.lp`.
+### Experimental StarPU gate offload
+
+`TANGOR_KVSP_STARPU_GATE_OFFLOAD=ON` enables the alternative StarPU codelet
+backend. It is disabled by default because the native cuFHE GPU path above is
+the faster complete KVSP implementation. This mode is useful for scheduler and
+codelet experiments; run it without `--enable-gpu` and configure StarPU worker
+counts explicitly, for example:
+
+```sh
+cmake -S /path/to/Tangor -B build/starpu \
+  -DIYOKAN_ENABLE_CUDA=ON -DTANGOR_KVSP_STARPU_GATE_OFFLOAD=ON
+STARPU_NCPU=1 STARPU_NCUDA=2 STARPU_NWORKER_PER_CUDA=32 STARPU_SCHED=eager \
+  build/starpu/bin/iyokan tfhe --cpu 64 ...
+```
 
 To use a different cuFHEpp checkout:
 
