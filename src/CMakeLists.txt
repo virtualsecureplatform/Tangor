@@ -146,6 +146,11 @@ if(TANGOR_BUILD_KVSP_COMPAT)
             target_link_libraries(iyokan PRIVATE tangor_starpu::starpu)
             target_link_options(iyokan PRIVATE
                 "-Wl,-rpath,${TANGOR_BUNDLED_STARPU_PREFIX}/lib")
+            # KVSP packages the bundled StarPU shared object next to the
+            # evaluator binaries. Preserve the build-tree path for local
+            # execution and add a relocatable path for the release archive.
+            set_property(TARGET iyokan APPEND PROPERTY
+                BUILD_RPATH "\$ORIGIN/../lib")
             if(TANGOR_CUDA_LIBRARY_DIR)
                 target_link_options(iyokan PRIVATE
                     "-Wl,-rpath,${TANGOR_CUDA_LIBRARY_DIR}")
