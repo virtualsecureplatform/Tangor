@@ -6,6 +6,13 @@
 
 namespace Tangor {
 
+// Configure the StarPU runtime before the first gate is submitted. The CPU
+// count is the compute-worker budget; CUDA devices are enabled only when the
+// Tangor evaluator was built with cuFHEpp support.
+void configureIyokanStarpu(unsigned cpuWorkers, unsigned cudaDevices);
+void prepareIyokanStarpu(const TFHEpp::EvalKey& evalKey);
+void shutdownIyokanStarpu();
+
 // The KVSP/Iyokan frontend represents every ordinary circuit wire as a
 // level-0 TLWE. Tangor's original experiment instead used level-1 wires, so
 // keep this API separate from the legacy codelets.
@@ -56,10 +63,13 @@ private:
 // scope the public gate API retains its synchronous behaviour.
 void beginIyokanStarpuCapture();
 std::shared_ptr<IyokanStarpuTask> endIyokanStarpuCapture();
+void synchronizeIyokanStarpuCapture();
 
 // Tell the persistent-handle registry that a CPU-only Iyokan task has
-// overwritten a level-0 value.
+// overwritten a value.
 void markIyokanTLWEHostWrite(IyokanTLWE& value);
+void markIyokanTRLWEHostWrite(IyokanTRLWE& value);
+void markIyokanTRGSWFFTHostWrite(IyokanTRGSWFFT& value);
 
 #ifdef USE_CUFHEPP
 // cuFHEpp support for the level-0 gate representation used by Iyokan/KVSP.
@@ -76,6 +86,9 @@ void iyokanCufheppHomORNOT(void* buffers[], void* clArg);
 void iyokanCufheppHomXOR(void* buffers[], void* clArg);
 void iyokanCufheppHomXNOR(void* buffers[], void* clArg);
 void iyokanCufheppHomMUX(void* buffers[], void* clArg);
+void iyokanCufheppCMUXFFT(void* buffers[], void* clArg);
+void iyokanCufheppCMUXFFTInPlaceTrue(void* buffers[], void* clArg);
+void iyokanCufheppCMUXFFTInPlaceFalse(void* buffers[], void* clArg);
 #endif
 
 void runIyokanStarpuBinaryGate(IyokanBinaryGate gate, IyokanTLWE& output,

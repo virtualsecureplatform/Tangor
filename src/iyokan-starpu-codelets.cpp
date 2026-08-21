@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <mutex>
 #include <stdexcept>
+#include <thread>
 #include <unordered_map>
 
 #include <starpu.h>
@@ -12,6 +13,7 @@
 namespace Tangor {
 struct IyokanStarpuTask::State {
     std::atomic_bool finished{false};
+    std::atomic_int error{0};
     starpu_data_handle_t output{};
 };
 
@@ -23,9 +25,13 @@ const TFHEpp::EvalKey* currentEvalKey = nullptr;
 std::mutex backendMutex;
 std::once_flag starpuInitOnce;
 int starpuInitStatus = -1;
+bool starpuRunning = false;
+unsigned configuredCpuWorkers = 0;
+unsigned configuredCudaDevices = 0;
 
 std::mutex persistentHandlesMutex;
 std::unordered_map<P::T*, starpu_data_handle_t> persistentHandles;
+std::unordered_map<void*, starpu_data_handle_t> persistentVariableHandles;
 thread_local bool captureActive = false;
 thread_local std::shared_ptr<IyokanStarpuTask> capturedTask;
 
@@ -45,36 +51,58 @@ starpu_data_handle_t persistentHandleFor(IyokanTLWE& value)
     return handle;
 }
 
+starpu_data_handle_t persistentVariableHandleFor(void* value, size_t size)
+{
+    std::lock_guard<std::mutex> lock(persistentHandlesMutex);
+    const auto it = persistentVariableHandles.find(value);
+    if (it != persistentVariableHandles.end())
+        return it->second;
+
+    starpu_data_handle_t handle{};
+    starpu_variable_data_register(&handle, STARPU_MAIN_RAM,
+                                  reinterpret_cast<uintptr_t>(value), size);
+    persistentVariableHandles.emplace(value, handle);
+    return handle;
+}
+
 void taskCompleted(void* arg)
 {
-    auto* state = static_cast<IyokanStarpuTask::State*>(arg);
-    const int status = starpu_data_acquire_cb(
-        state->output, STARPU_R,
-        [](void* completedArg) {
-            auto* completed = static_cast<IyokanStarpuTask::State*>(completedArg);
-            starpu_data_release(completed->output);
-            completed->finished.store(true, std::memory_order_release);
-        },
-        state);
-    if (status != 0)
-        throw std::runtime_error("Tangor could not queue a StarPU host copy");
+    auto* stateRef =
+        static_cast<std::shared_ptr<IyokanStarpuTask::State>*>(arg);
+    (*stateRef)->finished.store(true, std::memory_order_release);
+    delete stateRef;
 }
 
 void captureTask(std::shared_ptr<IyokanStarpuTask> task)
 {
     if (!captureActive)
         return;
-    if (capturedTask)
-        throw std::runtime_error("Tangor captured more than one Iyokan gate");
+    // A frontend task may expand into multiple StarPU primitives (for
+    // example, a ROM/RAM CMUX tree). The last submitted task depends on all
+    // values that feed its output, so it is the completion token propagated
+    // back to Iyokan's ready queue.
     capturedTask = std::move(task);
 }
 
 void ensureStarpuRuntime()
 {
     std::call_once(starpuInitOnce, [] {
-        starpuInitStatus = starpu_init(nullptr);
-        if (starpuInitStatus == 0)
-            std::atexit([] { starpu_shutdown(); });
+        if (configuredCudaDevices > 0)
+            setenv("STARPU_NWORKER_PER_CUDA", "32", 0);
+
+        starpu_conf config{};
+        starpu_conf_init(&config);
+        if (configuredCpuWorkers > 0)
+            config.ncpus = static_cast<int>(configuredCpuWorkers);
+        config.ncuda = static_cast<int>(configuredCudaDevices);
+        if (std::getenv("STARPU_SCHED") == nullptr)
+            config.sched_policy_name = "dmdas";
+
+        starpuInitStatus = starpu_init(&config);
+        if (starpuInitStatus == 0) {
+            starpuRunning = true;
+            std::atexit(shutdownIyokanStarpu);
+        }
     });
     if (starpuInitStatus != 0)
         throw std::runtime_error("Tangor could not initialize StarPU");
@@ -156,6 +184,30 @@ void cmuxFFTCodelet(void* buffers[], void*)
     TFHEpp::CMUXFFT<TFHEpp::lvl1param>(output, select, whenTrue, whenFalse);
 }
 
+void cmuxFFTInPlaceTrueCodelet(void* buffers[], void*)
+{
+    auto& output = *reinterpret_cast<IyokanTRLWE*>(
+        STARPU_VARIABLE_GET_PTR(buffers[0]));
+    const auto& select = *reinterpret_cast<const IyokanTRGSWFFT*>(
+        STARPU_VARIABLE_GET_PTR(buffers[1]));
+    const auto& whenFalse = *reinterpret_cast<const IyokanTRLWE*>(
+        STARPU_VARIABLE_GET_PTR(buffers[2]));
+    const IyokanTRLWE whenTrue = output;
+    TFHEpp::CMUXFFT<TFHEpp::lvl1param>(output, select, whenTrue, whenFalse);
+}
+
+void cmuxFFTInPlaceFalseCodelet(void* buffers[], void*)
+{
+    auto& output = *reinterpret_cast<IyokanTRLWE*>(
+        STARPU_VARIABLE_GET_PTR(buffers[0]));
+    const auto& select = *reinterpret_cast<const IyokanTRGSWFFT*>(
+        STARPU_VARIABLE_GET_PTR(buffers[1]));
+    const auto& whenTrue = *reinterpret_cast<const IyokanTRLWE*>(
+        STARPU_VARIABLE_GET_PTR(buffers[2]));
+    const IyokanTRLWE whenFalse = output;
+    TFHEpp::CMUXFFT<TFHEpp::lvl1param>(output, select, whenTrue, whenFalse);
+}
+
 void muxWoSECodelet(void* buffers[], void*)
 {
     auto& output = *reinterpret_cast<IyokanTRLWE*>(
@@ -182,6 +234,10 @@ starpu_codelet makeCodelet(Function function, const char* name,
     size_t index = 0;
     for (const auto mode : modes)
         codelet.modes[index++] = mode;
+    auto* model = new starpu_perfmodel{};
+    model->type = STARPU_HISTORY_BASED;
+    model->symbol = name;
+    codelet.model = model;
     return codelet;
 }
 
@@ -243,8 +299,35 @@ IyokanMuxCudaCodeletInitializer iyokanMuxCudaCodeletInitializer;
 #endif
 starpu_codelet cmuxFFTStarpuCodelet = makeCodelet(
     cmuxFFTCodelet, "IyokanCMUXFFT", {STARPU_W, STARPU_R, STARPU_R, STARPU_R});
+starpu_codelet cmuxFFTInPlaceTrueStarpuCodelet = makeCodelet(
+    cmuxFFTInPlaceTrueCodelet, "IyokanCMUXFFTInPlaceTrue",
+    {STARPU_RW, STARPU_R, STARPU_R});
+starpu_codelet cmuxFFTInPlaceFalseStarpuCodelet = makeCodelet(
+    cmuxFFTInPlaceFalseCodelet, "IyokanCMUXFFTInPlaceFalse",
+    {STARPU_RW, STARPU_R, STARPU_R});
 starpu_codelet muxWoSEStarpuCodelet = makeCodelet(
     muxWoSECodelet, "IyokanMUXwoSE", {STARPU_W, STARPU_R, STARPU_R, STARPU_R});
+
+#ifdef USE_CUFHEPP
+struct IyokanRamCudaCodeletInitializer {
+    IyokanRamCudaCodeletInitializer()
+    {
+        const char* const enableCudaCmux =
+            std::getenv("TANGOR_EXPERIMENTAL_CUDA_CMUX");
+        if (enableCudaCmux == nullptr || enableCudaCmux[0] != '1' ||
+            enableCudaCmux[1] != '\0')
+            return;
+
+        addCudaImplementation(cmuxFFTStarpuCodelet, iyokanCufheppCMUXFFT);
+        addCudaImplementation(cmuxFFTInPlaceTrueStarpuCodelet,
+                              iyokanCufheppCMUXFFTInPlaceTrue);
+        addCudaImplementation(cmuxFFTInPlaceFalseStarpuCodelet,
+                              iyokanCufheppCMUXFFTInPlaceFalse);
+    }
+};
+
+IyokanRamCudaCodeletInitializer iyokanRamCudaCodeletInitializer;
+#endif
 
 starpu_codelet& codeletFor(IyokanBinaryGate gate)
 {
@@ -262,33 +345,6 @@ starpu_codelet& codeletFor(IyokanBinaryGate gate)
 }
 
 template <size_t Count>
-void submitAndWait(starpu_codelet& codelet, std::array<IyokanTLWE*, Count> values)
-{
-    std::array<starpu_data_handle_t, Count> handles{};
-    for (size_t i = 0; i < Count; ++i) {
-        starpu_vector_data_register(&handles[i], STARPU_MAIN_RAM,
-                                    reinterpret_cast<uintptr_t>(values[i]->data()),
-                                    values[i]->size(), sizeof(P::T));
-    }
-    int status = 0;
-    if constexpr (Count == 2)
-        status = starpu_task_insert(&codelet, STARPU_W, handles[0], STARPU_R,
-                                    handles[1], 0);
-    else if constexpr (Count == 3)
-        status = starpu_task_insert(&codelet, STARPU_W, handles[0], STARPU_R,
-                                    handles[1], STARPU_R, handles[2], 0);
-    else
-        status = starpu_task_insert(&codelet, STARPU_W, handles[0], STARPU_R,
-                                    handles[1], STARPU_R, handles[2], STARPU_R,
-                                    handles[3], 0);
-    if (status != 0)
-        throw std::runtime_error("Tangor could not submit a StarPU gate task");
-    starpu_task_wait_for_all();
-    for (auto handle : handles)
-        starpu_data_unregister(handle);
-}
-
-template <size_t Count>
 std::shared_ptr<IyokanStarpuTask> submitAsync(
     starpu_codelet& codelet, std::array<IyokanTLWE*, Count> values)
 {
@@ -298,48 +354,156 @@ std::shared_ptr<IyokanStarpuTask> submitAsync(
 
     auto state = std::make_shared<IyokanStarpuTask::State>();
     state->output = handles[0];
+    auto* callbackState =
+        new std::shared_ptr<IyokanStarpuTask::State>(state);
     int status = 0;
     if constexpr (Count == 2)
         status = starpu_task_insert(
             &codelet, STARPU_W, handles[0], STARPU_R, handles[1],
-            STARPU_CALLBACK_WITH_ARG_NFREE, taskCompleted, state.get(), 0);
+            STARPU_CALLBACK_WITH_ARG_NFREE, taskCompleted, callbackState, 0);
     else if constexpr (Count == 3)
         status = starpu_task_insert(
             &codelet, STARPU_W, handles[0], STARPU_R, handles[1], STARPU_R,
             handles[2], STARPU_CALLBACK_WITH_ARG_NFREE, taskCompleted,
-            state.get(), 0);
+            callbackState, 0);
     else
         status = starpu_task_insert(
             &codelet, STARPU_W, handles[0], STARPU_R, handles[1], STARPU_R,
             handles[2], STARPU_R, handles[3], STARPU_CALLBACK_WITH_ARG_NFREE,
-            taskCompleted, state.get(), 0);
-    if (status != 0)
+            taskCompleted, callbackState, 0);
+    if (status != 0) {
+        delete callbackState;
         throw std::runtime_error("Tangor could not submit an asynchronous StarPU gate");
+    }
     return std::shared_ptr<IyokanStarpuTask>(
         new IyokanStarpuTask(std::move(state)));
 }
 
-void submitVariableAndWait(starpu_codelet& codelet,
-                           const std::array<void*, 4>& values,
-                           const std::array<size_t, 4>& sizes)
+template <size_t Count>
+std::shared_ptr<IyokanStarpuTask> submitVariableAsync(
+    starpu_codelet& codelet, const std::array<void*, Count>& values,
+    const std::array<size_t, Count>& sizes,
+    const std::array<enum starpu_data_access_mode, Count>& modes)
 {
-    std::array<starpu_data_handle_t, 4> handles{};
+    std::array<starpu_data_handle_t, Count> handles{};
     for (size_t i = 0; i < handles.size(); ++i) {
-        starpu_variable_data_register(&handles[i], STARPU_MAIN_RAM,
-                                      reinterpret_cast<uintptr_t>(values[i]),
-                                      sizes[i]);
+        handles[i] = persistentVariableHandleFor(values[i], sizes[i]);
     }
-    const int status = starpu_task_insert(
-        &codelet, STARPU_W, handles[0], STARPU_R, handles[1], STARPU_R,
-        handles[2], STARPU_R, handles[3], 0);
-    if (status != 0)
+
+    auto state = std::make_shared<IyokanStarpuTask::State>();
+    state->output = handles[0];
+    auto* callbackState =
+        new std::shared_ptr<IyokanStarpuTask::State>(state);
+    int status = 0;
+    if constexpr (Count == 3) {
+        status = starpu_task_insert(
+            &codelet, modes[0], handles[0], modes[1], handles[1], modes[2],
+            handles[2], STARPU_CALLBACK_WITH_ARG_NFREE, taskCompleted,
+            callbackState, 0);
+    }
+    else {
+        status = starpu_task_insert(
+            &codelet, modes[0], handles[0], modes[1], handles[1], modes[2],
+            handles[2], modes[3], handles[3],
+            STARPU_CALLBACK_WITH_ARG_NFREE, taskCompleted, callbackState, 0);
+    }
+    if (status != 0) {
+        delete callbackState;
         throw std::runtime_error("Tangor could not submit a StarPU RAM task");
-    starpu_task_wait_for_all();
-    for (auto handle : handles)
-        starpu_data_unregister(handle);
+    }
+    return std::shared_ptr<IyokanStarpuTask>(
+        new IyokanStarpuTask(std::move(state)));
+}
+
+std::shared_ptr<IyokanStarpuTask> submitMuxWoSEAsync(
+    IyokanTRLWE& output, const IyokanTLWE& select,
+    const IyokanTLWE& whenTrue, const IyokanTLWE& whenFalse)
+{
+    const starpu_data_handle_t outputHandle =
+        persistentVariableHandleFor(&output, sizeof(output));
+    const std::array<starpu_data_handle_t, 3> inputHandles{
+        persistentHandleFor(const_cast<IyokanTLWE&>(select)),
+        persistentHandleFor(const_cast<IyokanTLWE&>(whenTrue)),
+        persistentHandleFor(const_cast<IyokanTLWE&>(whenFalse))};
+
+    auto state = std::make_shared<IyokanStarpuTask::State>();
+    state->output = outputHandle;
+    auto* callbackState =
+        new std::shared_ptr<IyokanStarpuTask::State>(state);
+    const int status = starpu_task_insert(
+        &muxWoSEStarpuCodelet, STARPU_W, outputHandle, STARPU_R,
+        inputHandles[0], STARPU_R, inputHandles[1], STARPU_R, inputHandles[2],
+        STARPU_CALLBACK_WITH_ARG_NFREE, taskCompleted, callbackState, 0);
+    if (status != 0) {
+        delete callbackState;
+        throw std::runtime_error("Tangor could not submit a StarPU RAM MUX task");
+    }
+    return std::shared_ptr<IyokanStarpuTask>(
+        new IyokanStarpuTask(std::move(state)));
+}
+
+void waitForTask(const std::shared_ptr<IyokanStarpuTask>& task)
+{
+    while (!task->isFinished())
+        std::this_thread::yield();
+    task->synchronizeOutput();
+}
+
+void markVariableHostWrite(void* value)
+{
+    starpu_data_handle_t handle{};
+    {
+        std::lock_guard<std::mutex> lock(persistentHandlesMutex);
+        const auto it = persistentVariableHandles.find(value);
+        if (it == persistentVariableHandles.end())
+            return;
+        handle = it->second;
+    }
+    if (starpu_data_acquire(handle, STARPU_W) != 0)
+        throw std::runtime_error("Tangor could not mark a CPU variable write");
+    starpu_data_release(handle);
 }
 
 }  // namespace
+
+void configureIyokanStarpu(unsigned cpuWorkers, unsigned cudaDevices)
+{
+    std::lock_guard<std::mutex> lock(backendMutex);
+    if (starpuRunning || starpuInitStatus != -1)
+        throw std::runtime_error(
+            "Tangor's StarPU worker configuration is already active");
+    configuredCpuWorkers = cpuWorkers;
+    configuredCudaDevices = cudaDevices;
+}
+
+void prepareIyokanStarpu(const TFHEpp::EvalKey& evalKey)
+{
+    ensureStarpu(evalKey);
+}
+
+void shutdownIyokanStarpu()
+{
+    std::lock_guard<std::mutex> backendLock(backendMutex);
+    if (!starpuRunning)
+        return;
+
+    starpu_task_wait_for_all();
+    {
+        std::lock_guard<std::mutex> handlesLock(persistentHandlesMutex);
+        for (const auto& [_, handle] : persistentHandles)
+            starpu_data_unregister_no_coherency(handle);
+        for (const auto& [_, handle] : persistentVariableHandles)
+            starpu_data_unregister_no_coherency(handle);
+        persistentHandles.clear();
+        persistentVariableHandles.clear();
+    }
+#ifdef USE_CUFHEPP
+    cleanupIyokanCufhepp();
+#endif
+    currentEvalKey = nullptr;
+    starpu_shutdown();
+    starpuRunning = false;
+}
 
 IyokanStarpuTask::IyokanStarpuTask(std::shared_ptr<State> state)
     : state_(std::move(state))
@@ -353,8 +517,16 @@ bool IyokanStarpuTask::isFinished() const
 
 void IyokanStarpuTask::synchronizeOutput() const
 {
-    // Completion is published only after taskCompleted's asynchronous host
-    // acquisition has made this value coherent in main memory.
+    int error = state_->error.load(std::memory_order_acquire);
+    if (error == 0) {
+        error = starpu_data_acquire(state_->output, STARPU_R);
+        if (error == 0)
+            starpu_data_release(state_->output);
+        else
+            state_->error.store(error, std::memory_order_release);
+    }
+    if (error != 0)
+        throw std::runtime_error("Tangor could not synchronize a StarPU output");
 }
 
 void beginIyokanStarpuCapture()
@@ -373,6 +545,15 @@ std::shared_ptr<IyokanStarpuTask> endIyokanStarpuCapture()
     return std::move(capturedTask);
 }
 
+void synchronizeIyokanStarpuCapture()
+{
+    if (!captureActive)
+        throw std::runtime_error(
+            "Tangor synchronized an inactive Iyokan StarPU capture");
+    if (capturedTask)
+        waitForTask(capturedTask);
+}
+
 void markIyokanTLWEHostWrite(IyokanTLWE& value)
 {
     starpu_data_handle_t handle{};
@@ -388,6 +569,16 @@ void markIyokanTLWEHostWrite(IyokanTLWE& value)
     starpu_data_release(handle);
 }
 
+void markIyokanTRLWEHostWrite(IyokanTRLWE& value)
+{
+    markVariableHostWrite(&value);
+}
+
+void markIyokanTRGSWFFTHostWrite(IyokanTRGSWFFT& value)
+{
+    markVariableHostWrite(&value);
+}
+
 void runIyokanStarpuBinaryGate(IyokanBinaryGate gate, IyokanTLWE& output,
                                const IyokanTLWE& left, const IyokanTLWE& right,
                                const TFHEpp::EvalKey& evalKey)
@@ -400,9 +591,10 @@ void runIyokanStarpuBinaryGate(IyokanBinaryGate gate, IyokanTLWE& output,
                                            const_cast<IyokanTLWE*>(&right)}));
         return;
     }
-    submitAndWait(codeletFor(gate),
-                  std::array{&output, const_cast<IyokanTLWE*>(&left),
-                             const_cast<IyokanTLWE*>(&right)});
+    waitForTask(submitAsync(codeletFor(gate),
+                            std::array{&output,
+                                       const_cast<IyokanTLWE*>(&left),
+                                       const_cast<IyokanTLWE*>(&right)}));
 }
 
 void runIyokanStarpuNot(IyokanTLWE& output, const IyokanTLWE& input)
@@ -416,8 +608,9 @@ void runIyokanStarpuNot(IyokanTLWE& output, const IyokanTLWE& input)
                                            const_cast<IyokanTLWE*>(&input)}));
         return;
     }
-    submitAndWait(notStarpuCodelet,
-                  std::array{&output, const_cast<IyokanTLWE*>(&input)});
+    waitForTask(submitAsync(
+        notStarpuCodelet,
+        std::array{&output, const_cast<IyokanTLWE*>(&input)}));
 }
 
 void runIyokanStarpuMux(IyokanTLWE& output, const IyokanTLWE& select,
@@ -434,10 +627,11 @@ void runIyokanStarpuMux(IyokanTLWE& output, const IyokanTLWE& select,
                        const_cast<IyokanTLWE*>(&whenFalse)}));
         return;
     }
-    submitAndWait(muxStarpuCodelet,
-                  std::array{&output, const_cast<IyokanTLWE*>(&select),
-                             const_cast<IyokanTLWE*>(&whenTrue),
-                             const_cast<IyokanTLWE*>(&whenFalse)});
+    waitForTask(submitAsync(
+        muxStarpuCodelet,
+        std::array{&output, const_cast<IyokanTLWE*>(&select),
+                   const_cast<IyokanTLWE*>(&whenTrue),
+                   const_cast<IyokanTLWE*>(&whenFalse)}));
 }
 
 void runIyokanStarpuCMUXFFT(IyokanTRLWE& output,
@@ -445,24 +639,38 @@ void runIyokanStarpuCMUXFFT(IyokanTRLWE& output,
                             const IyokanTRLWE& whenTrue,
                             const IyokanTRLWE& whenFalse)
 {
-    // The RAM selector updates its accumulator in place.  Registering that
-    // same object as both the write buffer and a separate read buffer creates
-    // two StarPU handles for one allocation, which is invalid and can crash
-    // during RAM evaluation.  Keep this CPU-only selector operation local in
-    // the aliased case; it has no CUDA implementation yet in any event.
-    if (&output == &whenTrue || &output == &whenFalse) {
-        TFHEpp::CMUXFFT<TFHEpp::lvl1param>(output, select, whenTrue,
-                                           whenFalse);
-        return;
-    }
     ensureStarpuRuntime();
-    submitVariableAndWait(
-        cmuxFFTStarpuCodelet,
-        {&output, const_cast<IyokanTRGSWFFT*>(&select),
-         const_cast<IyokanTRLWE*>(&whenTrue),
-         const_cast<IyokanTRLWE*>(&whenFalse)},
-        {sizeof(IyokanTRLWE), sizeof(IyokanTRGSWFFT), sizeof(IyokanTRLWE),
-         sizeof(IyokanTRLWE)});
+    std::shared_ptr<IyokanStarpuTask> task;
+    if (&output == &whenTrue) {
+        task = submitVariableAsync<3>(
+            cmuxFFTInPlaceTrueStarpuCodelet,
+            {&output, const_cast<IyokanTRGSWFFT*>(&select),
+             const_cast<IyokanTRLWE*>(&whenFalse)},
+            {sizeof(IyokanTRLWE), sizeof(IyokanTRGSWFFT), sizeof(IyokanTRLWE)},
+            {STARPU_RW, STARPU_R, STARPU_R});
+    }
+    else if (&output == &whenFalse) {
+        task = submitVariableAsync<3>(
+            cmuxFFTInPlaceFalseStarpuCodelet,
+            {&output, const_cast<IyokanTRGSWFFT*>(&select),
+             const_cast<IyokanTRLWE*>(&whenTrue)},
+            {sizeof(IyokanTRLWE), sizeof(IyokanTRGSWFFT), sizeof(IyokanTRLWE)},
+            {STARPU_RW, STARPU_R, STARPU_R});
+    }
+    else {
+        task = submitVariableAsync<4>(
+            cmuxFFTStarpuCodelet,
+            {&output, const_cast<IyokanTRGSWFFT*>(&select),
+             const_cast<IyokanTRLWE*>(&whenTrue),
+             const_cast<IyokanTRLWE*>(&whenFalse)},
+            {sizeof(IyokanTRLWE), sizeof(IyokanTRGSWFFT), sizeof(IyokanTRLWE),
+             sizeof(IyokanTRLWE)},
+            {STARPU_W, STARPU_R, STARPU_R, STARPU_R});
+    }
+    if (captureActive)
+        captureTask(task);
+    else
+        waitForTask(task);
 }
 
 void runIyokanStarpuMuxWoSE(IyokanTRLWE& output, const IyokanTLWE& select,
@@ -471,25 +679,11 @@ void runIyokanStarpuMuxWoSE(IyokanTRLWE& output, const IyokanTLWE& select,
                             const TFHEpp::EvalKey& evalKey)
 {
     ensureStarpu(evalKey);
-    std::array<starpu_data_handle_t, 4> handles{};
-    starpu_variable_data_register(&handles[0], STARPU_MAIN_RAM,
-                                  reinterpret_cast<uintptr_t>(&output),
-                                  sizeof(output));
-    const std::array<const IyokanTLWE*, 3> inputs{&select, &whenTrue,
-                                                   &whenFalse};
-    for (size_t index = 0; index < inputs.size(); ++index) {
-        starpu_variable_data_register(&handles[index + 1], STARPU_MAIN_RAM,
-                                      reinterpret_cast<uintptr_t>(inputs[index]),
-                                      sizeof(IyokanTLWE));
-    }
-    const int status = starpu_task_insert(
-        &muxWoSEStarpuCodelet, STARPU_W, handles[0], STARPU_R, handles[1],
-        STARPU_R, handles[2], STARPU_R, handles[3], 0);
-    if (status != 0)
-        throw std::runtime_error("Tangor could not submit a StarPU RAM task");
-    starpu_task_wait_for_all();
-    for (auto handle : handles)
-        starpu_data_unregister(handle);
+    auto task = submitMuxWoSEAsync(output, select, whenTrue, whenFalse);
+    if (captureActive)
+        captureTask(task);
+    else
+        waitForTask(task);
 }
 
 }  // namespace Tangor

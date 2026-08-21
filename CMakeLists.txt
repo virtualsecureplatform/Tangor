@@ -33,12 +33,12 @@ project(tangor CXX C)
 set(CMAKE_CXX_STANDARD 20)
 option(USE_HOGE "Use HOGE for 2-input gates" OFF)
 option(USE_CUFHEPP "Use cuFHEpp CUDA gate kernels through StarPU CUDA workers" OFF)
-option(TANGOR_USE_BUNDLED_STARPU "Build and use bundled StarPU instead of pkg-config StarPU" ${USE_CUFHEPP})
+option(TANGOR_USE_BUNDLED_STARPU "Build and use bundled StarPU instead of pkg-config StarPU" ON)
 option(TANGOR_BUILD_TESTS "Build Tangor test clients" ON)
 option(TANGOR_BUILD_KVSP_COMPAT "Build Iyokan command-line compatibility binaries for KVSP" ON)
 option(TANGOR_FETCH_IYOKAN_COMPAT
        "Fetch the pinned Iyokan frontend when a local compatibility source is unavailable" ON)
-option(TANGOR_KVSP_STARPU_GATE_OFFLOAD "Use the experimental StarPU gate-offload backend for KVSP/Iyokan level-0 gates" OFF)
+option(TANGOR_KVSP_STARPU_GATE_OFFLOAD "Schedule KVSP homomorphic gates with StarPU" ON)
 set(TANGOR_CUFHEPP_SOURCE_DIR "${PROJECT_SOURCE_DIR}/thirdparties/cuFHEpp" CACHE PATH "cuFHEpp checkout that provides TFHEpp")
 set(TANGOR_TFHEPP_SOURCE_DIR "" CACHE PATH "Optional TFHEpp checkout override; defaults to cuFHEpp's nested TFHEpp")
 set(TANGOR_BUNDLED_STARPU_MAX_CPUS "256" CACHE STRING "Bundled StarPU CPU-worker capacity; also sizes STARPU_NMAXWORKERS for many CUDA streams")
@@ -178,6 +178,12 @@ if(USE_CUFHEPP)
             "only; use a CUDA-enabled StarPU build to enable cuFHEpp codelets.")
     endif()
 endif()
+if(TANGOR_KVSP_STARPU_GATE_OFFLOAD AND
+        NOT (TANGOR_USE_BUNDLED_STARPU OR STARPU_FOUND))
+    message(FATAL_ERROR
+        "Tangor's KVSP evaluator requires StarPU. Install starpu-1.4 or "
+        "configure with -DTANGOR_USE_BUNDLED_STARPU=ON.")
+endif()
 
 if(TANGOR_USE_CUFHEPP_STARPU)
     enable_language(CUDA)
@@ -201,9 +207,11 @@ endif()
 set(ENABLE_TEST OFF CACHE BOOL "Build TFHEpp tests" FORCE)
 set(ENABLE_BENCHMARK OFF CACHE BOOL "Build TFHEpp benchmarks" FORCE)
 set(ENABLE_TUTORIAL OFF CACHE BOOL "Build TFHEpp tutorial" FORCE)
-if(NOT TANGOR_USE_CUFHEPP_STARPU)
-    set(USE_SPQLIOS_INTL ON CACHE BOOL "Use interleaved-format SPQLIOS")
-endif()
+# cuFHEpp consumes TFHEpp's split Fourier layout. Use that layout in CPU-only
+# builds too, so one evaluation key and one encrypted ROM/RAM packet can move
+# between Tangor CPU workers, CUDA workers, and Iyokan without conversion.
+set(USE_SPQLIOS_INTL OFF CACHE BOOL
+    "Use TFHEpp's split Fourier layout for CPU/CUDA archive compatibility" FORCE)
 set(USE_AVX512 OFF CACHE BOOL "Use AVX512 ver. SPQLIOS")
 if(TANGOR_TFHEPP_SOURCE_DIR)
     if(TANGOR_USE_CUFHEPP_STARPU)

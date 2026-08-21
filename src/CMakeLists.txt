@@ -120,9 +120,10 @@ if(TANGOR_BUILD_KVSP_COMPAT)
     # remain shared while the gate execution path migrates independently.
     if(TANGOR_KVSP_STARPU_GATE_OFFLOAD AND
             (TANGOR_USE_BUNDLED_STARPU OR STARPU_FOUND))
-        target_sources(iyokan PRIVATE
-            iyokan-starpu-codelets.cpp
-            iyokan-cufhepp-starpu.cu)
+        target_sources(iyokan PRIVATE iyokan-starpu-codelets.cpp)
+        if(TANGOR_USE_CUFHEPP_STARPU)
+            target_sources(iyokan PRIVATE iyokan-cufhepp-starpu.cu)
+        endif()
         target_include_directories(iyokan PRIVATE "${PROJECT_SOURCE_DIR}/include")
         # iyokan_tfhepp.hpp defines the gate-task methods inline.  Applying
         # the offload substitution to only iyokan_tfhepp.cpp leaves different

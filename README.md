@@ -45,13 +45,18 @@ frontend (including its submodules) by default; use
 `TANGOR_IYOKAN_COMPAT_SOURCE_DIR` and
 `TANGOR_IYOKAN_COMPAT_THIRDPARTY_DIR` for an offline source mirror.
 
-### GPU execution (recommended)
+### StarPU CPU/GPU execution
 
-The default KVSP GPU path uses Iyokan's native cuFHE frontend, built through
-Tangor's compatibility target. It keeps the ordinary gate graph and the
-GPU-compatible RAM/ROM work on the native multi-stream CUDA path, while the
-requested CPU worker pool performs the frontend work. This is the released
-high-performance configuration; pass `--enable-gpu` at runtime.
+Tangor schedules each homomorphic gate as a StarPU task. With CUDA enabled,
+the same dependency graph contains TFHEpp CPU implementations and cuFHEpp CUDA
+implementations, so StarPU can place ready gates on both resource types.
+ROM/RAM CMUX operations are individual StarPU tasks too, but use TFHEpp CPU
+workers by default: the cuFHEpp FFT CMUX does not yet preserve enough noise
+margin for the depth-8 encrypted RAM update path. Developers can opt into that
+kernel with `TANGOR_EXPERIMENTAL_CUDA_CMUX=1`. No TFHE parameters are changed
+for runtime compatibility. CPU and CUDA builds both use the split Fourier
+archive layout, so keys and encrypted ROM/RAM packets are portable across
+Tangor, Iyokan, and KVSP.
 
 Tangor accepts KVSP's Iyokan CMake cache variables, so KVSP can use Tangor as
 its source directory without renaming build flags:
@@ -81,6 +86,12 @@ two GPUs:
   --blueprint /path/to/kvsp/build/share/kvsp/alexandrite.toml -i fib.enc
 ```
 
+`--cpu` selects the number of StarPU CPU workers, `--num-gpu` selects CUDA
+devices, and `--enable-gpu` enables the CUDA workers. Tangor defaults to the
+`dmdas` scheduler. `STARPU_SCHED` can override it, and
+`STARPU_NWORKER_PER_CUDA` controls the number of asynchronous workers per GPU
+(32 by default). CPU-only execution uses the same graph without CUDA workers.
+
 The evaluator cannot inspect encrypted termination itself. For KVSP's bundled
 `fib(5)` input, a plaintext emulator establishes that 224 cycles are required.
 Decrypt the resulting packet to confirm `f0 = true` and `x10 = 5`:
@@ -89,23 +100,14 @@ Decrypt the resulting packet to confirm `f0 = true` and `x10 = 5`:
 /path/to/kvsp/build/bin/kvsp dec --cpu alexandrite -k secret.key -i result.enc
 ```
 
-On two A100 GPUs, the full 224-cycle Fibonacci workload was verified against
-Iyokan with byte-identical decrypted packets; Tangor completed in 221.02 s and
-Iyokan in 219.44 s in that sample.
-
-### Experimental StarPU gate offload
-
-`TANGOR_KVSP_STARPU_GATE_OFFLOAD=ON` enables the alternative StarPU codelet
-backend. It is disabled by default because the native cuFHE GPU path above is
-the faster complete KVSP implementation. This mode is useful for scheduler and
-codelet experiments; run it without `--enable-gpu` and configure StarPU worker
-counts explicitly, for example:
+StarPU gate scheduling is enabled by default. It can be stated explicitly for
+reproducible builds:
 
 ```sh
 cmake -S /path/to/Tangor -B build/starpu \
   -DIYOKAN_ENABLE_CUDA=ON -DTANGOR_KVSP_STARPU_GATE_OFFLOAD=ON
-STARPU_NCPU=1 STARPU_NCUDA=2 STARPU_NWORKER_PER_CUDA=32 STARPU_SCHED=eager \
-  build/starpu/bin/iyokan tfhe --cpu 64 ...
+STARPU_SCHED=dmdas build/starpu/bin/iyokan tfhe \
+  --enable-gpu --cpu 64 --num-gpu 2 ...
 ```
 
 To use a different cuFHEpp checkout:

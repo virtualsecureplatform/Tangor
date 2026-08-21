@@ -127,4 +127,45 @@ void iyokanCufheppHomMUX(void* buffers[], void*)
         starpu_cuda_get_local_stream(), currentCudaDevice());
 }
 
+void iyokanCufheppCMUXFFT(void* buffers[], void*)
+{
+    auto* output = reinterpret_cast<TFHEpp::lvl1param::T*>(
+        STARPU_VARIABLE_GET_PTR(buffers[0]));
+    const auto* select = reinterpret_cast<const double*>(
+        STARPU_VARIABLE_GET_PTR(buffers[1]));
+    auto* whenTrue = reinterpret_cast<TFHEpp::lvl1param::T*>(
+        STARPU_VARIABLE_GET_PTR(buffers[2]));
+    auto* whenFalse = reinterpret_cast<TFHEpp::lvl1param::T*>(
+        STARPU_VARIABLE_GET_PTR(buffers[3]));
+    cufhe::CMUXTFHEppFFTkernel(
+        output, select, whenTrue, whenFalse, starpu_cuda_get_local_stream(),
+        currentCudaDevice());
+}
+
+void iyokanCufheppCMUXFFTInPlaceTrue(void* buffers[], void*)
+{
+    auto* output = reinterpret_cast<TFHEpp::lvl1param::T*>(
+        STARPU_VARIABLE_GET_PTR(buffers[0]));
+    const auto* select = reinterpret_cast<const double*>(
+        STARPU_VARIABLE_GET_PTR(buffers[1]));
+    auto* whenFalse = reinterpret_cast<TFHEpp::lvl1param::T*>(
+        STARPU_VARIABLE_GET_PTR(buffers[2]));
+    cufhe::CMUXTFHEppFFTkernel(
+        output, select, output, whenFalse, starpu_cuda_get_local_stream(),
+        currentCudaDevice());
+}
+
+void iyokanCufheppCMUXFFTInPlaceFalse(void* buffers[], void*)
+{
+    auto* output = reinterpret_cast<TFHEpp::lvl1param::T*>(
+        STARPU_VARIABLE_GET_PTR(buffers[0]));
+    const auto* select = reinterpret_cast<const double*>(
+        STARPU_VARIABLE_GET_PTR(buffers[1]));
+    auto* whenTrue = reinterpret_cast<TFHEpp::lvl1param::T*>(
+        STARPU_VARIABLE_GET_PTR(buffers[2]));
+    cufhe::CMUXTFHEppFFTkernel(
+        output, select, whenTrue, output, starpu_cuda_get_local_stream(),
+        currentCudaDevice());
+}
+
 }  // namespace Tangor
