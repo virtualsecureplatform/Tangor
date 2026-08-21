@@ -39,6 +39,11 @@ option(TANGOR_BUILD_KVSP_COMPAT "Build Iyokan command-line compatibility binarie
 option(TANGOR_FETCH_IYOKAN_COMPAT
        "Fetch the pinned Iyokan frontend when a local compatibility source is unavailable" ON)
 option(TANGOR_KVSP_STARPU_GATE_OFFLOAD "Schedule KVSP homomorphic gates with StarPU" ON)
+option(TANGOR_STARPU_PROFILE
+       "Enable StarPU worker/task profiling and FxT tracing by default" OFF)
+if(TANGOR_STARPU_PROFILE)
+    add_compile_definitions(TANGOR_STARPU_PROFILE_DEFAULT=1)
+endif()
 set(TANGOR_CUFHEPP_SOURCE_DIR "${PROJECT_SOURCE_DIR}/thirdparties/cuFHEpp" CACHE PATH "cuFHEpp checkout that provides TFHEpp")
 set(TANGOR_TFHEPP_SOURCE_DIR "" CACHE PATH "Optional TFHEpp checkout override; defaults to cuFHEpp's nested TFHEpp")
 set(TANGOR_BUNDLED_STARPU_MAX_CPUS "256" CACHE STRING "Bundled StarPU CPU-worker capacity; also sizes STARPU_NMAXWORKERS for many CUDA streams")
@@ -93,6 +98,15 @@ if(TANGOR_USE_BUNDLED_STARPU)
         set(TANGOR_BUNDLED_STARPU_ENV "PATH=$ENV{PATH}")
         set(TANGOR_BUNDLED_STARPU_CUDA_CONFIGURE_ARGS "--disable-cuda")
     endif()
+    if(TANGOR_STARPU_PROFILE)
+        # Explicitly enable FxT rather than relying on StarPU's optional
+        # auto-detection. This makes the profiling CMake switch fail clearly
+        # when the required fxt development package is unavailable.
+        pkg_check_modules(FXT REQUIRED fxt)
+        set(TANGOR_BUNDLED_STARPU_PROFILE_CONFIGURE_ARGS "--enable-fxt")
+    else()
+        set(TANGOR_BUNDLED_STARPU_PROFILE_CONFIGURE_ARGS "--disable-fxt")
+    endif()
     set(TANGOR_BUNDLED_STARPU_PREFIX "${CMAKE_BINARY_DIR}/starpu-install")
     set(TANGOR_BUNDLED_STARPU_WORK_DIR "${CMAKE_BINARY_DIR}/starpu-build")
     set(TANGOR_BUNDLED_STARPU_LIBRARY "${TANGOR_BUNDLED_STARPU_PREFIX}/lib/libstarpu-1.4.so")
@@ -116,6 +130,7 @@ if(TANGOR_USE_BUNDLED_STARPU)
                 --prefix='<INSTALL_DIR>' \
                 --libdir='<INSTALL_DIR>/lib' \
                 ${TANGOR_BUNDLED_STARPU_CUDA_CONFIGURE_ARGS} \
+                ${TANGOR_BUNDLED_STARPU_PROFILE_CONFIGURE_ARGS} \
                 --enable-maxcpus='${TANGOR_BUNDLED_STARPU_MAX_CPUS}' \
                 --enable-maxcombinedworkers='${TANGOR_BUNDLED_STARPU_MAX_COMBINED_WORKERS}' \
                 --disable-opencl \

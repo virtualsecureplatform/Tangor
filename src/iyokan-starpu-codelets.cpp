@@ -87,6 +87,16 @@ void captureTask(std::shared_ptr<IyokanStarpuTask> task)
 void ensureStarpuRuntime()
 {
     std::call_once(starpuInitOnce, [] {
+#ifdef TANGOR_STARPU_PROFILE_DEFAULT
+        // A profiling build is deliberately opt-in at CMake configuration
+        // time. Respect environment variables so callers can redirect output
+        // or selectively disable individual diagnostics without rebuilding.
+        setenv("STARPU_PROFILING", "1", 0);
+        setenv("STARPU_WORKER_STATS", "1", 0);
+        setenv("STARPU_BUS_STATS", "1", 0);
+        setenv("STARPU_PROFILING_TASK", "1", 0);
+        setenv("STARPU_FXT_TRACE", "1", 0);
+#endif
         if (configuredCudaDevices > 0)
             setenv("STARPU_NWORKER_PER_CUDA", "32", 0);
 

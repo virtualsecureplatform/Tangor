@@ -92,6 +92,28 @@ devices, and `--enable-gpu` enables the CUDA workers. Tangor defaults to the
 `STARPU_NWORKER_PER_CUDA` controls the number of asynchronous workers per GPU
 (32 by default). CPU-only execution uses the same graph without CUDA workers.
 
+### StarPU diagnostics
+
+Profiling is off by default. Build with `-DTANGOR_STARPU_PROFILE=ON` to enable
+StarPU worker and per-task reports plus an FxT trace by default. This option
+also builds the bundled StarPU with FxT support and requires the `fxt`
+development package (included in KVSP's Ubuntu 24.04 build image). Environment
+variables retain precedence, so reports can be redirected or disabled without
+rebuilding:
+
+```sh
+cmake -S /path/to/Tangor -B build/profile \
+  -DIYOKAN_ENABLE_CUDA=ON -DTANGOR_STARPU_PROFILE=ON
+STARPU_WORKER_STATS_FILE=starpu-workers.txt \
+STARPU_FXT_PREFIX="$PWD" build/profile/bin/iyokan tfhe ...
+```
+
+The report distinguishes CPU and CUDA worker execution, sleeping, waiting, and
+scheduling time, and includes CPU↔GPU transfer statistics. Per-task records
+identify the gate/CMUX codelet and its queue delay. The FxT trace is written on
+shutdown (by default under `/tmp`) and can be converted with the
+`starpu_fxt_tool` installed by StarPU.
+
 The evaluator cannot inspect encrypted termination itself. For KVSP's bundled
 `fib(5)` input, a plaintext emulator establishes that 224 cycles are required.
 Decrypt the resulting packet to confirm `f0 = true` and `x10 = 5`:
